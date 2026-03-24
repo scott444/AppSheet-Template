@@ -5,79 +5,538 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AppSheet Template</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Google Sans', Roboto, Arial, sans-serif; background: #f8f9fa; color: #202124; }
-    .container { max-width: 720px; margin: 0 auto; padding: 24px; }
-    header { background: #1976D2; color: #fff; padding: 24px; border-radius: 8px; margin-bottom: 24px; }
-    header h1 { font-size: 22px; font-weight: 500; }
-    header p { margin-top: 8px; opacity: 0.9; font-size: 14px; }
-    .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
-    .card h2 { font-size: 16px; font-weight: 500; margin-bottom: 12px; color: #1976D2; }
-    .card p { font-size: 14px; line-height: 1.6; color: #5f6368; }
-    .status { display: inline-block; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500; }
-    .status.ok { background: #e6f4ea; color: #137333; }
-    .status.pending { background: #fef7e0; color: #b06000; }
-    #result { margin-top: 16px; padding: 12px; background: #f1f3f4; border-radius: 6px; font-family: monospace; font-size: 13px; white-space: pre-wrap; display: none; }
-    button { background: #1976D2; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
-    button:hover { background: #1565C0; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Color tokens ── */
+    :root {
+      --primary:       #1976D2;
+      --primary-dark:  #1565C0;
+      --primary-light: #e8f0fe;
+      --bg:            #f8f9fa;
+      --surface:       #ffffff;
+      --text:          #202124;
+      --text-muted:    #5f6368;
+      --border:        #e0e0e0;
+      --success-bg:    #e6f4ea;
+      --success-text:  #137333;
+      --error-bg:      #fce8e6;
+      --error-text:    #c5221f;
+      --shadow-sm:     0 1px 3px rgba(0,0,0,0.12);
+      --shadow-md:     0 2px 6px rgba(0,0,0,0.15);
+    }
+
+    /* ── Base ── */
+    body {
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 12px;
+      box-shadow: var(--shadow-md);
+      z-index: 10;
+    }
+    .topbar-logo {
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: -0.2px;
+      white-space: nowrap;
+    }
+    .topbar-spacer { flex: 1; }
+    .topbar-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      opacity: 0.92;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #69f0ae;
+      flex-shrink: 0;
+    }
+
+    /* ── Shell (sidebar + content) ── */
+    .shell {
+      display: flex;
+      overflow: hidden;
+      height: 100%;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 8px 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 16px 16px 6px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      color: var(--text-muted);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    .nav-item:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+    .nav-item.active {
+      background: var(--primary-light);
+      border-left-color: var(--primary);
+      color: var(--primary);
+      font-weight: 500;
+    }
+    .nav-item .icon {
+      font-family: 'Material Symbols Rounded';
+      font-size: 20px;
+      font-weight: 300;
+      line-height: 1;
+    }
+    .nav-item .label { font-size: 14px; }
+
+    /* ── Content area ── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 32px;
+      background: var(--bg);
+    }
+
+    /* ── Sections ── */
+    .section { display: none; }
+    .section.active { display: block; }
+    .section-title {
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .badge.ok   { background: var(--success-bg); color: var(--success-text); }
+    .badge.err  { background: var(--error-bg);   color: var(--error-text); }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .btn:hover    { background: var(--primary-dark); }
+    .btn:disabled { background: #b0bec5; cursor: not-allowed; }
+    .btn .icon    { font-family: 'Material Symbols Rounded'; font-size: 18px; }
+    .btn-row      { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+    /* ── Result/output box ── */
+    .result-box {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: #f1f3f4;
+      border-radius: 6px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      color: var(--text);
+      display: none;
+    }
+    .result-box.error { background: var(--error-bg); color: var(--error-text); }
+
+    /* ── Sheets table ── */
+    .sheets-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 14px;
+    }
+    .sheets-table th {
+      text-align: left;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-bottom: 2px solid var(--border);
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .sheets-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .sheets-table tr:last-child td { border-bottom: none; }
+    .sheets-table tr:hover td { background: var(--bg); }
+    .sheets-table .sheet-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .sheets-table .sheet-link:hover { text-decoration: underline; }
+    .sheets-table .id-cell {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty-state {
+      padding: 32px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    /* ── Getting Started steps ── */
+    .steps { display: flex; flex-direction: column; gap: 12px; }
+    .step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .step-number {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-body { flex: 1; }
+    .step-title { font-weight: 500; margin-bottom: 4px; }
+    .step-desc  { color: var(--text-muted); line-height: 1.6; }
+    code {
+      background: #f1f3f4;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 12px;
+      color: #c5221f;
+    }
+
+    /* ── Responsive: sidebar becomes tab bar at ≤768px ── */
+    @media (max-width: 768px) {
+      body { grid-template-rows: 56px auto 1fr; }
+      .shell { flex-direction: column; }
+      .sidebar {
+        width: 100%;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .sidebar-section-label { display: none; }
+      .nav-item {
+        flex-direction: column;
+        gap: 2px;
+        padding: 10px 16px;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .nav-item.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--primary);
+      }
+      .content { padding: 20px 16px; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>AppSheet Template</h1>
-      <p>Manage your AppSheet data sources from Apps Script</p>
-    </header>
 
-    <div class="card">
-      <h2>Status</h2>
-      <p><span class="status ok" id="statusBadge">Connected</span></p>
-      <p style="margin-top: 8px;">This Apps Script project is linked to your AppSheet Template workflow.</p>
+  <!-- ── Top bar ── -->
+  <header class="topbar">
+    <span class="topbar-logo">AppSheet Template</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-status">
+      <span class="status-dot"></span>
+      <span>Connected</span>
     </div>
+  </header>
 
-    <div class="card">
-      <h2>Quick Actions</h2>
-      <p>Use the buttons below or call these functions directly from the Apps Script editor.</p>
-      <button onclick="runAction('status')">Check Status</button>
-      <button onclick="runAction('listSheets')">List My Sheets</button>
-      <div id="result"></div>
-    </div>
+  <!-- ── Shell ── -->
+  <div class="shell">
 
-    <div class="card">
-      <h2>Getting Started</h2>
-      <p>
-        1. Define your app locally in <code>apps/&lt;name&gt;/definition.json</code><br>
-        2. Run <code>npm run dev -- gen-schema -d apps/&lt;name&gt;</code><br>
-        3. Call <code>createSpreadsheetFromSchema(schema)</code> with your generated schema<br>
-        4. Create your AppSheet app pointing at the new Google Sheet
-      </p>
-    </div>
+    <!-- ── Sidebar ── -->
+    <nav class="sidebar">
+      <div class="sidebar-section-label">Menu</div>
+      <div class="nav-item active" data-nav="dashboard" tabindex="0" aria-current="page"
+           onclick="navigate('dashboard')" onkeydown="if(event.key==='Enter'||event.key===' ')navigate('dashboard')">
+        <span class="icon">dashboard</span>
+        <span class="label">Dashboard</span>
+      </div>
+      <div class="nav-item" data-nav="sheets" tabindex="0"
+           onclick="navigate('sheets')" onkeydown="if(event.key==='Enter'||event.key===' ')navigate('sheets')">
+        <span class="icon">table_chart</span>
+        <span class="label">My Sheets</span>
+      </div>
+      <div class="nav-item" data-nav="getting-started" tabindex="0"
+           onclick="navigate('getting-started')" onkeydown="if(event.key==='Enter'||event.key===' ')navigate('getting-started')">
+        <span class="icon">rocket_launch</span>
+        <span class="label">Getting Started</span>
+      </div>
+    </nav>
+
+    <!-- ── Content ── -->
+    <main class="content">
+
+      <!-- Dashboard -->
+      <section id="section-dashboard" class="section active">
+        <div class="section-title">Dashboard</div>
+
+        <div class="card">
+          <div class="card-title">Connection Status</div>
+          <span class="badge ok">
+            <span class="icon" style="font-family:'Material Symbols Rounded';font-size:16px">check_circle</span>
+            Apps Script Connected
+          </span>
+          <p style="margin-top:10px;color:var(--text-muted);line-height:1.6">
+            This project is linked to your AppSheet Template workflow.
+            Use the actions below to interact with your data sources.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Quick Actions</div>
+          <div class="btn-row">
+            <button class="btn" onclick="checkStatus()">
+              <span class="icon">sync</span> Check Status
+            </button>
+            <button class="btn" onclick="navigate('sheets')">
+              <span class="icon">table_chart</span> View Sheets
+            </button>
+          </div>
+          <div id="dashboard-result" class="result-box"></div>
+        </div>
+      </section>
+
+      <!-- My Sheets -->
+      <section id="section-sheets" class="section">
+        <div class="section-title">My Sheets</div>
+
+        <div class="card">
+          <div class="card-title">Google Spreadsheets</div>
+          <p style="color:var(--text-muted);margin-bottom:16px">
+            Spreadsheets in your Google Drive that can be used as AppSheet data sources.
+          </p>
+          <button class="btn" id="listSheetsBtn" onclick="listSheets()">
+            <span class="icon">refresh</span> Load Sheets
+          </button>
+          <div id="sheets-result">
+            <div class="empty-state">Click "Load Sheets" to fetch your spreadsheets.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Getting Started -->
+      <section id="section-getting-started" class="section">
+        <div class="section-title">Getting Started</div>
+
+        <div class="card">
+          <div class="card-title">Setup Workflow</div>
+          <div class="steps">
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-body">
+                <div class="step-title">Define your app locally</div>
+                <div class="step-desc">
+                  Create <code>apps/&lt;name&gt;/definition.json</code> using
+                  <code>npm run dev -- init -n "MyApp"</code>
+                </div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-body">
+                <div class="step-title">Validate &amp; generate schema</div>
+                <div class="step-desc">
+                  Run <code>npm run dev -- validate -d apps/MyApp</code> then
+                  <code>npm run dev -- gen-schema -d apps/MyApp</code>
+                </div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-body">
+                <div class="step-title">Create the Google Sheet</div>
+                <div class="step-desc">
+                  Open this Apps Script project and run
+                  <code>createSpreadsheetFromSchema(schema)</code>
+                  with the contents of your generated <code>sheet-schema.json</code>.
+                </div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">4</div>
+              <div class="step-body">
+                <div class="step-title">Create your AppSheet app</div>
+                <div class="step-desc">
+                  Go to <strong>appsheet.com</strong>, click
+                  <strong>Create &gt; App &gt; Start with existing data</strong>,
+                  and select the Google Sheet you just created.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
   </div>
 
   <script>
-    function runAction(action) {
-      var resultEl = document.getElementById('result');
-      resultEl.style.display = 'block';
-      resultEl.textContent = 'Running...';
+    // ── Navigation ──────────────────────────────────────────────
+    function navigate(name) {
+      document.querySelectorAll('.nav-item').forEach(function(el) {
+        var isActive = el.dataset.nav === name;
+        el.classList.toggle('active', isActive);
+        el.setAttribute('aria-current', isActive ? 'page' : '');
+      });
+      document.querySelectorAll('.section').forEach(function(el) {
+        el.classList.toggle('active', el.id === 'section-' + name);
+      });
+    }
 
-      if (action === 'status') {
-        resultEl.textContent = JSON.stringify({
-          status: 'ok',
-          timestamp: new Date().toISOString(),
-          message: 'Apps Script project is running.'
-        }, null, 2);
-      } else if (action === 'listSheets') {
-        google.script.run
-          .withSuccessHandler(function(result) {
-            resultEl.textContent = JSON.stringify(result, null, 2);
-          })
-          .withFailureHandler(function(err) {
-            resultEl.textContent = 'Error: ' + err.message;
-          })
-          .listMySpreadsheets();
-      }
+    // ── Dashboard: Check Status ──────────────────────────────────
+    function checkStatus() {
+      var el = document.getElementById('dashboard-result');
+      el.className = 'result-box';
+      el.style.display = 'block';
+      el.textContent = JSON.stringify({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        message: 'Apps Script project is running.'
+      }, null, 2);
+    }
+
+    // ── Sheets: List spreadsheets ────────────────────────────────
+    function listSheets() {
+      var btn = document.getElementById('listSheetsBtn');
+      var container = document.getElementById('sheets-result');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="icon">hourglass_empty</span> Loading...';
+      container.innerHTML = '';
+
+      google.script.run
+        .withSuccessHandler(function(sheets) {
+          btn.disabled = false;
+          btn.innerHTML = '<span class="icon">refresh</span> Reload';
+
+          if (!sheets || sheets.length === 0) {
+            container.innerHTML = '<div class="empty-state">No spreadsheets found in your Drive.</div>';
+            return;
+          }
+
+          var rows = sheets.map(function(s) {
+            return '<tr>'
+              + '<td>' + escapeHtml(s.name) + '</td>'
+              + '<td class="id-cell">' + escapeHtml(s.id) + '</td>'
+              + '<td><a class="sheet-link" href="' + escapeHtml(s.url) + '" target="_blank">Open ↗</a></td>'
+              + '</tr>';
+          }).join('');
+
+          container.innerHTML = '<table class="sheets-table">'
+            + '<thead><tr><th>Name</th><th>Spreadsheet ID</th><th>Link</th></tr></thead>'
+            + '<tbody>' + rows + '</tbody>'
+            + '</table>';
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = '<span class="icon">refresh</span> Retry';
+          container.innerHTML = '<div class="result-box error" style="display:block">Error: '
+            + escapeHtml(err.message || String(err)) + '</div>';
+        })
+        .listMySpreadsheets();
+    }
+
+    // ── Utility ──────────────────────────────────────────────────
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
     }
   </script>
 </body>
