@@ -1,0 +1,106 @@
+{
+  "appName": "Example Inventory App",
+  "description": "A sample inventory and order tracking app",
+  "tables": [
+    {
+      "name": "Products",
+      "sheetName": "Products",
+      "columns": [
+        { "name": "ProductID", "type": "Text", "key": true, "required": true },
+        { "name": "Name", "type": "Text", "required": true },
+        { "name": "Description", "type": "LongText" },
+        { "name": "Category", "type": "Enum", "enumValues": ["Electronics", "Clothing", "Food", "Other"] },
+        { "name": "Price", "type": "Price" },
+        { "name": "Quantity", "type": "Number" },
+        { "name": "Photo", "type": "Image" },
+        { "name": "LastUpdated", "type": "ChangeTimestamp" }
+      ]
+    },
+    {
+      "name": "Orders",
+      "sheetName": "Orders",
+      "columns": [
+        { "name": "OrderID", "type": "Text", "key": true, "required": true },
+        { "name": "Product", "type": "Ref", "refTable": "Products", "required": true },
+        { "name": "Quantity", "type": "Number", "required": true },
+        { "name": "OrderDate", "type": "DateTime" },
+        { "name": "Status", "type": "Enum", "enumValues": ["Pending", "Shipped", "Delivered", "Cancelled"] },
+        { "name": "Total", "type": "Price", "formula": "[Quantity] * [Product].[Price]" }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "name": "Products_List",
+      "type": "deck",
+      "table": "Products",
+      "displayName": "Products",
+      "icon": "shopping_cart",
+      "sortBy": "Name"
+    },
+    {
+      "name": "Products_Detail",
+      "type": "detail",
+      "table": "Products"
+    },
+    {
+      "name": "Products_Form",
+      "type": "form",
+      "table": "Products"
+    },
+    {
+      "name": "Orders_List",
+      "type": "table",
+      "table": "Orders",
+      "displayName": "Orders",
+      "icon": "receipt",
+      "sortBy": "OrderDate"
+    }
+  ],
+  "actions": [
+    {
+      "name": "MarkShipped",
+      "type": "SetValues",
+      "table": "Orders",
+      "formula": "\"Shipped\"",
+      "description": "Mark the order as shipped",
+      "condition": "[Status] = \"Pending\""
+    }
+  ],
+  "automations": [
+    {
+      "name": "LowStockAlert",
+      "event": {
+        "type": "DataChange",
+        "table": "Products",
+        "condition": "[Quantity] < 10"
+      },
+      "process": [
+        {
+          "type": "SendEmail",
+          "config": {
+            "to": "inventory@example.com",
+            "subject": "Low Stock Alert: <<[Name]>>",
+            "body": "Product <<[Name]>> has only <<[Quantity]>> units remaining."
+          }
+        }
+      ],
+      "enabled": true,
+      "description": "Alert when product stock falls below 10"
+    }
+  ],
+  "settings": {
+    "appName": "Example Inventory App",
+    "icon": "inventory_2",
+    "primaryColor": "#1976D2",
+    "startView": "Products_List",
+    "offlineMode": true,
+    "updateMode": "AUTO",
+    "syncInterval": 30
+  },
+  "security": {
+    "requireSignIn": true,
+    "authProvider": "Google",
+    "domainRestriction": ["example.com"]
+  }
+}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AppSheet Template</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Google Sans', Roboto, Arial, sans-serif; background: #f8f9fa; color: #202124; }
+    .container { max-width: 720px; margin: 0 auto; padding: 24px; }
+    header { background: #1976D2; color: #fff; padding: 24px; border-radius: 8px; margin-bottom: 24px; }
+    header h1 { font-size: 22px; font-weight: 500; }
+    header p { margin-top: 8px; opacity: 0.9; font-size: 14px; }
+    .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+    .card h2 { font-size: 16px; font-weight: 500; margin-bottom: 12px; color: #1976D2; }
+    .card p { font-size: 14px; line-height: 1.6; color: #5f6368; }
+    .status { display: inline-block; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500; }
+    .status.ok { background: #e6f4ea; color: #137333; }
+    .status.pending { background: #fef7e0; color: #b06000; }
+    #result { margin-top: 16px; padding: 12px; background: #f1f3f4; border-radius: 6px; font-family: monospace; font-size: 13px; white-space: pre-wrap; display: none; }
+    button { background: #1976D2; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
+    button:hover { background: #1565C0; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>AppSheet Template</h1>
+      <p>Manage your AppSheet data sources from Apps Script</p>
+    </header>
+
+    <div class="card">
+      <h2>Status</h2>
+      <p><span class="status ok" id="statusBadge">Connected</span></p>
+      <p style="margin-top: 8px;">This Apps Script project is linked to your AppSheet Template workflow.</p>
+    </div>
+
+    <div class="card">
+      <h2>Quick Actions</h2>
+      <p>Use the buttons below or call these functions directly from the Apps Script editor.</p>
+      <button onclick="runAction('status')">Check Status</button>
+      <button onclick="runAction('listSheets')">List My Sheets</button>
+      <div id="result"></div>
+    </div>
+
+    <div class="card">
+      <h2>Getting Started</h2>
+      <p>
+        1. Define your app locally in <code>apps/&lt;name&gt;/definition.json</code><br>
+        2. Run <code>npm run dev -- gen-schema -d apps/&lt;name&gt;</code><br>
+        3. Call <code>createSpreadsheetFromSchema(schema)</code> with your generated schema<br>
+        4. Create your AppSheet app pointing at the new Google Sheet
+      </p>
+    </div>
+  </div>
+
+  <script>
+    function runAction(action) {
+      var resultEl = document.getElementById('result');
+      resultEl.style.display = 'block';
+      resultEl.textContent = 'Running...';
+
+      if (action === 'status') {
+        resultEl.textContent = JSON.stringify({
+          status: 'ok',
+          timestamp: new Date().toISOString(),
+          message: 'Apps Script project is running.'
+        }, null, 2);
+      } else if (action === 'listSheets') {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            resultEl.textContent = JSON.stringify(result, null, 2);
+          })
+          .withFailureHandler(function(err) {
+            resultEl.textContent = 'Error: ' + err.message;
+          })
+          .listMySpreadsheets();
+      }
+    }
+  </script>
+</body>
+</html>

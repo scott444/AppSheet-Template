@@ -1,0 +1,26 @@
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (contain secrets)
+.env
+
+# clasp credentials and project config (contains script ID)
+appscript/.clasp.json
+.clasprc.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

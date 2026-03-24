@@ -1,0 +1,26 @@
+{
+  "spreadsheetName": "MyApp",
+  "sheets": [
+    {
+      "name": "Items",
+      "headers": [
+        "ID",
+        "Name",
+        "Description",
+        "Status"
+      ],
+      "columnTypes": [
+        {},
+        {},
+        {},
+        {
+          "validation": "dropdown",
+          "values": [
+            "Active",
+            "Inactive"
+          ]
+        }
+      ]
+    }
+  ]
+}

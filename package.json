@@ -1,0 +1,36 @@
+{
+  "name": "appsheet-template",
+  "version": "0.1.0",
+  "description": "Template toolkit for Google AppSheet apps via Google Drive + Apps Script",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "appsheet": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint src/",
+    "init": "tsx src/index.ts init",
+    "validate": "tsx src/index.ts validate",
+    "gen-schema": "tsx src/index.ts generate-schema",
+    "push-script": "tsx src/index.ts push-script",
+    "clasp:login": "clasp login",
+    "clasp:create": "cd appscript && clasp create --type standalone --title \"AppSheet Template\"",
+    "clasp:push": "cd appscript && clasp push",
+    "clasp:open": "cd appscript && clasp open-script"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.3.0",
+    "@types/node": "^22.13.0",
+    "eslint": "^9.19.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.57.2"
+  }
+}

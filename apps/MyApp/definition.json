@@ -1,0 +1,68 @@
+{
+  "appName": "MyApp",
+  "description": "",
+  "tables": [
+    {
+      "name": "Items",
+      "columns": [
+        {
+          "name": "ID",
+          "type": "Text",
+          "key": true,
+          "required": true
+        },
+        {
+          "name": "Name",
+          "type": "Text",
+          "required": true
+        },
+        {
+          "name": "Description",
+          "type": "LongText"
+        },
+        {
+          "name": "Status",
+          "type": "Enum",
+          "enumValues": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        {
+          "name": "CreatedAt",
+          "type": "ChangeTimestamp"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "name": "Items_List",
+      "type": "deck",
+      "table": "Items",
+      "displayName": "Items",
+      "icon": "list"
+    },
+    {
+      "name": "Items_Detail",
+      "type": "detail",
+      "table": "Items"
+    },
+    {
+      "name": "Items_Form",
+      "type": "form",
+      "table": "Items"
+    }
+  ],
+  "settings": {
+    "appName": "MyApp",
+    "icon": "apps",
+    "primaryColor": "#1976D2",
+    "startView": "Items_List",
+    "offlineMode": true
+  },
+  "security": {
+    "requireSignIn": true,
+    "authProvider": "Google"
+  }
+}
