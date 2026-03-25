@@ -1,0 +1,71 @@
+{
+  "spreadsheetName": "Example Inventory App",
+  "sheets": [
+    {
+      "name": "Products",
+      "headers": [
+        "ProductID",
+        "Name",
+        "Description",
+        "Category",
+        "Price",
+        "Quantity",
+        "Photo"
+      ],
+      "columnTypes": [
+        {},
+        {},
+        {},
+        {
+          "validation": "dropdown",
+          "values": [
+            "Electronics",
+            "Clothing",
+            "Food",
+            "Other"
+          ]
+        },
+        {
+          "format": "$#,##0.00"
+        },
+        {
+          "format": "#,##0"
+        },
+        {}
+      ]
+    },
+    {
+      "name": "Orders",
+      "headers": [
+        "OrderID",
+        "Product",
+        "Quantity",
+        "OrderDate",
+        "Status",
+        "Total"
+      ],
+      "columnTypes": [
+        {},
+        {},
+        {
+          "format": "#,##0"
+        },
+        {
+          "format": "yyyy-mm-dd hh:mm:ss"
+        },
+        {
+          "validation": "dropdown",
+          "values": [
+            "Pending",
+            "Shipped",
+            "Delivered",
+            "Cancelled"
+          ]
+        },
+        {
+          "format": "$#,##0.00"
+        }
+      ]
+    }
+  ]
+}
