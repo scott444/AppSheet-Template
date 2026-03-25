@@ -2,6 +2,13 @@
   /* ── Reset ── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  /* Apps Script serves inside a sandboxed iframe — pin the full height chain */
+  html, body { height: 100%; }
+  /* #app is the only child of body, but body's grid expects two children
+     (topbar + shell). display:contents makes #app invisible to the grid
+     so its children become the actual grid items. */
+  #app { display: contents; }
+
   /* ── Color tokens ── */
   :root {
     --primary:       #1976D2;
@@ -28,7 +35,7 @@
     background: var(--bg);
     display: grid;
     grid-template-rows: 56px 1fr;
-    height: 100vh;
+    min-height: 100vh;
     overflow: hidden;
   }
 

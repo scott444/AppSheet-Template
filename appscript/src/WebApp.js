@@ -32,6 +32,10 @@ function doGet(e) {
     return jsonResponse_(schema);
   }
 
+  if (action === "folder-status") {
+    return jsonResponse_(getFolderSetupStatus());
+  }
+
   return jsonResponse_({ error: "Unknown action: " + action }, 400);
 }
 
@@ -62,14 +66,29 @@ function doPost(e) {
     return jsonResponse_({ rows: rows, count: rows.length });
   }
 
+  if (action === "setup-folders") {
+    if (!body.appName) {
+      return jsonResponse_({ error: "Missing appName" }, 400);
+    }
+    var result = setupFolders(body.appName);
+    return jsonResponse_(result);
+  }
+
   return jsonResponse_({ error: "Unknown action: " + action }, 400);
 }
 
 /**
- * List spreadsheets in the user's Drive (called from index.html via google.script.run).
+ * List spreadsheets accessible from the UI (called via google.script.run).
+ * Scopes to app_data/ folder when Drive folders are configured;
+ * falls back to full Drive search otherwise.
  * @returns {Object[]} array of { id, name, url }
  */
 function listMySpreadsheets() {
+  var ids = getFolderIds_();
+  if (ids.appDataFolderId) {
+    return listSheetsInFolder(ids.appDataFolderId);
+  }
+  // Fallback: search all of Drive (pre-folder-setup behavior)
   var files = DriveApp.getFilesByType(MimeType.GOOGLE_SHEETS);
   var sheets = [];
   while (files.hasNext() && sheets.length < 50) {

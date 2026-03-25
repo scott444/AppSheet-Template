@@ -8,10 +8,25 @@
 /**
  * Create a new spreadsheet from a schema definition.
  * @param {Object} schema - { spreadsheetName, sheets: [{ name, headers, columnTypes, sampleRows }] }
- * @returns {Object} { spreadsheetId, spreadsheetUrl }
+ * @returns {Object} { spreadsheetId, spreadsheetUrl, folderUrl }
  */
 function createSpreadsheetFromSchema(schema) {
   const ss = SpreadsheetApp.create(schema.spreadsheetName);
+
+  // Move to app_data/ folder if Drive folders are configured
+  var appDataFolderId = null;
+  try {
+    var folderIds = getFolderIds_();
+    if (folderIds.appDataFolderId) {
+      appDataFolderId = folderIds.appDataFolderId;
+      var folder = DriveApp.getFolderById(appDataFolderId);
+      DriveApp.getFileById(ss.getId()).moveTo(folder);
+    }
+  } catch (e) {
+    console.error('DriveManager: could not move spreadsheet to app_data folder:', e);
+    // Non-fatal — spreadsheet remains in Drive root
+    appDataFolderId = null;
+  }
 
   // Remove default "Sheet1" after adding our sheets
   const defaultSheet = ss.getSheets()[0];
@@ -73,6 +88,9 @@ function createSpreadsheetFromSchema(schema) {
   return {
     spreadsheetId: ss.getId(),
     spreadsheetUrl: ss.getUrl(),
+    folderUrl: appDataFolderId
+      ? 'https://drive.google.com/drive/folders/' + appDataFolderId
+      : null,
   };
 }
 

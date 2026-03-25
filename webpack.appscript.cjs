@@ -14,6 +14,26 @@ module.exports = {
     path: DIST,
     filename: "_vue-app.js",
     clean: true,
+    // Apps Script HtmlService (Caja sanitizer) cannot handle ES6+ in inline <script> tags.
+    // Force ES5 output so template literals, arrow functions, etc. are transpiled.
+    environment: {
+      arrowFunction: false,
+      const: false,
+      destructuring: false,
+      forOf: false,
+      templateLiteral: false,
+    },
+  },
+
+  optimization: {
+    minimizer: [
+      new (require("terser-webpack-plugin"))({
+        terserOptions: {
+          ecma: 5,
+          output: { ecma: 5 },
+        },
+      }),
+    ],
   },
 
   resolve: {
@@ -25,6 +45,15 @@ module.exports = {
     rules: [
       { test: /\.vue$/, loader: "vue-loader" },
       { test: /\.css$/, use: ["style-loader", "css-loader"] },
+      // Transpile all JS (including Vue runtime from node_modules) to ES5.
+      // Apps Script HtmlService (Caja sanitizer) breaks on template literals in inline <script>.
+      {
+        test: /\.js$/,
+        loader: "babel-loader",
+        options: {
+          presets: [["@babel/preset-env", { targets: { ie: "11" } }]],
+        },
+      },
     ],
   },
 

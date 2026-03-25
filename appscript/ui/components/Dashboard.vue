@@ -1,6 +1,20 @@
 <template>
   <div class="section-title">Dashboard</div>
 
+  <div v-if="!driveFoldersConfigured" class="card" style="border-left:3px solid #F9AB00">
+    <div class="card-title">
+      <span class="icon" style="font-family:'Material Symbols Rounded';font-size:18px;vertical-align:middle;margin-right:6px;color:#F9AB00">folder_open</span>
+      Drive Folders Not Set Up
+    </div>
+    <p style="color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+      Set up your app's Drive folder structure so spreadsheets are organized in
+      <strong>app_data/</strong> and <strong>app_system/</strong>.
+    </p>
+    <button class="btn" @click="$emit('navigate', 'drive-setup')">
+      <span class="icon">create_new_folder</span> Set Up Drive Folders
+    </button>
+  </div>
+
   <div class="card">
     <div class="card-title">Connection Status</div>
     <span class="badge ok">
@@ -31,7 +45,21 @@
 export default {
   emits: ['navigate'],
   data() {
-    return { statusResult: '' };
+    return {
+      statusResult: '',
+      driveFoldersConfigured: true, // optimistic default; updated on mount
+    };
+  },
+  mounted() {
+    google.script.run
+      .withSuccessHandler((status) => {
+        this.driveFoldersConfigured = status && status.configured;
+      })
+      .withFailureHandler(() => {
+        // If we can't check, don't show the warning
+        this.driveFoldersConfigured = true;
+      })
+      .getFolderSetupStatus();
   },
   methods: {
     checkStatus() {
