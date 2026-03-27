@@ -9,14 +9,25 @@
  */
 
 /**
+ * Include helper — used by index.html template to pull in styles.html and vue-app.html.
+ * Usage inside HTML: <?!= include('styles') ?>
+ * @param {string} filename - HTML filename without extension
+ * @returns {string} Raw file content
+ */
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
  * Serve the index.html UI when accessed as a web app.
  */
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || null;
 
-  // If no action param, serve the HTML UI
+  // If no action param, serve the HTML UI (template mode for <?!= include() ?> tags)
   if (!action) {
-    return HtmlService.createHtmlOutputFromFile("index")
+    return HtmlService.createTemplateFromFile("index")
+      .evaluate()
       .setTitle("AppSheet Template");
   }
   if (action === "status") {

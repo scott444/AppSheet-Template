@@ -25,6 +25,7 @@ export default {
     return {
       items: [
         { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
+        { id: 'projects', icon: 'folder_open', label: 'Projects' },
         { id: 'sheets', icon: 'table_chart', label: 'My Sheets' },
         { id: 'drive-setup', icon: 'create_new_folder', label: 'Drive Setup' },
         { id: 'getting-started', icon: 'rocket_launch', label: 'Getting Started' },

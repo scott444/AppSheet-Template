@@ -25,7 +25,8 @@
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "dotenv": "^16.4.7",
-    "vue": "^3.5.31"
+    "vue": "^3.5.31",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

@@ -9,6 +9,7 @@ const DIST = path.resolve(APPSCRIPT, "dist");
 
 module.exports = {
   mode: "production",
+  performance: { hints: false },  // SheetJS adds ~350KB; acceptable for single-user internal tool
   entry: path.resolve(APPSCRIPT, "ui/main.js"),
   output: {
     path: DIST,
@@ -80,33 +81,41 @@ module.exports = {
       ],
     }),
 
-    // After webpack emits the Vue bundle, inline it into index.html
+    // After webpack emits the Vue bundle, build the Apps Script HTML files.
+    // Instead of inlining everything into one index.html (which can exceed
+    // HtmlService's ~500KB Caja-sanitized limit), we split into separate
+    // .html files and use <?!= include('filename') ?> server-side includes.
     {
       apply(compiler) {
-        compiler.hooks.afterEmit.tap("InlineVueBundle", () => {
+        compiler.hooks.afterEmit.tap("BuildAppsScriptHtml", () => {
+          // 1. Copy styles.html into dist as-is
           const styles = fs.readFileSync(
             path.resolve(APPSCRIPT, "styles.html"),
             "utf8"
           );
+          fs.writeFileSync(path.resolve(DIST, "styles.html"), styles);
+
+          // 2. Wrap the JS bundle in <script> tags and save as vue-app.html
           const bundle = fs.readFileSync(
             path.resolve(DIST, "_vue-app.js"),
             "utf8"
           );
+          fs.writeFileSync(
+            path.resolve(DIST, "vue-app.html"),
+            "<script>\n" + bundle + "\n</" + "script>"
+          );
+
+          // 3. Build index.html with server-side includes
           const template = fs.readFileSync(
             path.resolve(APPSCRIPT, "index.html"),
             "utf8"
           );
-
           const html = template
-            .replace("<!-- INJECT:STYLES -->", styles)
-            .replace(
-              "<!-- INJECT:VUEBUNDLE -->",
-              "<script>" + bundle + "</" + "script>"
-            );
-
+            .replace("<!-- INJECT:STYLES -->", "<?!= include('styles') ?>")
+            .replace("<!-- INJECT:VUEBUNDLE -->", "<?!= include('vue-app') ?>");
           fs.writeFileSync(path.resolve(DIST, "index.html"), html);
 
-          // Remove the standalone JS bundle and license — now inlined
+          // 4. Clean up standalone JS bundle and license
           fs.unlinkSync(path.resolve(DIST, "_vue-app.js"));
           const license = path.resolve(DIST, "_vue-app.js.LICENSE.txt");
           if (fs.existsSync(license)) fs.unlinkSync(license);
