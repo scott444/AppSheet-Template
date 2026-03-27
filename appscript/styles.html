@@ -335,6 +335,11 @@
   .tab-item:hover { color: var(--text); }
   .tab-item.active { color: var(--primary); border-bottom-color: var(--primary); }
 
+  /* ── Save button (primary color) ── */
+  .btn-save { background:var(--primary); color:#fff; border:none; }
+  .btn-save:hover:not(:disabled) { opacity:0.9; }
+  .btn-save:disabled { opacity:0.6; cursor:not-allowed; }
+
   /* ── View-mode segmented toggle ── */
   .view-mode-bar { display:flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden; flex-shrink:0; }
   .view-mode-btn { padding:6px 14px; font-size:13px; font-weight:500; background:transparent; color:var(--text-muted); border:none; cursor:pointer; transition:background 0.15s, color 0.15s; }

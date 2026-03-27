@@ -2,7 +2,7 @@
   <div>
     <!-- Header -->
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-      <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border);padding:6px 12px" @click="$emit('navigate', 'projects')">
+      <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border);padding:6px 12px" @click="goBack">
         <span class="icon" style="font-size:16px">arrow_back</span> Projects
       </button>
       <div v-if="project" class="section-title" style="margin-bottom:0">
@@ -38,31 +38,44 @@
           </div>
         </div>
 
-        <!-- Modifications: Add Item controls -->
-        <div v-if="viewMode === 'modifications'" style="margin-bottom:12px">
+        <!-- Modifications: toolbar — Add Item + Save/Discard when dirty -->
+        <div v-if="viewMode === 'modifications'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <button class="btn" @click="showAddForm = !showAddForm">
             <span class="icon">add</span> Add Item
           </button>
-          <!-- Inline add form — v-show preserves input state when toggled -->
-          <div v-show="showAddForm" style="background:var(--bg);border-radius:6px;padding:16px;margin-top:10px">
-            <div class="form-group">
-              <label class="form-label">Nomenclature</label>
-              <input v-model="addForm.nomenclature" type="text" class="form-input" placeholder="Equipment nomenclature" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Notes</label>
-              <input v-model="addForm.notes" type="text" class="form-input" placeholder="Optional reason / notes" />
-            </div>
-            <div v-if="adlSaveError" class="result-box error" style="display:block;margin-bottom:8px">{{ adlSaveError }}</div>
-            <div class="btn-row">
-              <button class="btn" :disabled="adlSaving || !addForm.nomenclature.trim()" @click="saveAddEntry">
-                <span class="icon">{{ adlSaving ? 'hourglass_empty' : 'save' }}</span>
-                {{ adlSaving ? 'Saving...' : 'Save Entry' }}
-              </button>
-              <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" @click="cancelAddForm">
-                Cancel
-              </button>
-            </div>
+          <template v-if="adlDirty">
+            <button class="btn btn-save" :disabled="adlSaving" @click="saveAdl">
+              <span class="icon">{{ adlSaving ? 'hourglass_empty' : 'save' }}</span>
+              {{ adlSaving ? 'Saving...' : 'Save Changes' }}
+            </button>
+            <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" :disabled="adlSaving" @click="discardAdl">
+              Discard
+            </button>
+            <span style="font-size:12px;color:var(--text-muted)">Unsaved changes</span>
+          </template>
+          <span v-else-if="!loadingAdl" style="font-size:12px;color:var(--success-text)">
+            <span class="icon" style="font-size:14px;vertical-align:middle">check_circle</span> All changes saved
+          </span>
+          <div v-if="adlSaveError" class="result-box error" style="display:block;margin-left:8px">{{ adlSaveError }}</div>
+        </div>
+
+        <!-- Inline add form — v-show preserves input state when toggled -->
+        <div v-if="viewMode === 'modifications'" v-show="showAddForm" style="background:var(--bg);border-radius:6px;padding:16px;margin-bottom:12px">
+          <div class="form-group">
+            <label class="form-label">Nomenclature</label>
+            <input v-model="addForm.nomenclature" type="text" class="form-input" placeholder="Equipment nomenclature" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <input v-model="addForm.notes" type="text" class="form-input" placeholder="Optional reason / notes" />
+          </div>
+          <div class="btn-row">
+            <button class="btn" :disabled="!addForm.nomenclature.trim()" @click="saveAddEntry">
+              <span class="icon">add</span> Add to List
+            </button>
+            <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" @click="cancelAddForm">
+              Cancel
+            </button>
           </div>
         </div>
 
@@ -98,7 +111,6 @@
                   <button
                     v-if="!deletedUids[row._uid]"
                     class="btn-danger-sm"
-                    :disabled="deletingUid === row._uid"
                     @click="deleteRow(row)"
                   >
                     <span class="icon" style="font-size:14px;vertical-align:middle">delete</span>
@@ -106,7 +118,6 @@
                   <button
                     v-else
                     class="btn-undo-sm"
-                    :disabled="undoingAdlUid === deletedUids[row._uid]"
                     @click="undoAdlEntry(deletedUids[row._uid])"
                   >Undo</button>
                 </td>
@@ -126,7 +137,6 @@
                 <td style="white-space:nowrap">
                   <button
                     class="btn-undo-sm"
-                    :disabled="undoingAdlUid === row._adlUid"
                     @click="undoAdlEntry(row._adlUid)"
                   >Undo</button>
                 </td>
@@ -179,6 +189,15 @@ var KEY_COLUMNS = ['OPT','COF','DS','CUST REF','ORGANIZER 1','ORGANIZER 2','SUB 
 var HIDDEN_COLUMNS = ['_uid'];
 var PRICE_COLUMN = 'EXT LIST';
 
+// Generate an 8-char uppercase hex UID — matches the server-side generateUid_() format
+function clientUid() {
+  var hex = '';
+  for (var i = 0; i < 8; i++) {
+    hex += Math.floor(Math.random() * 16).toString(16);
+  }
+  return hex.toUpperCase();
+}
+
 export default {
   props: { projectId: { type: String, required: true } },
   emits: ['navigate'],
@@ -202,8 +221,10 @@ export default {
       eqlPageNum: 0,
       pageSize: PAGE_SIZE,
 
-      // ADL data (eager-loaded on mount)
+      // ADL data — live working state (in-memory until user saves)
       adl: [],
+      savedAdl: [],        // snapshot of adl as last loaded or saved to Drive
+      adlDirtyFlag: false, // true when adl has unsaved in-memory changes
       loadingAdl: true,
       adlError: '',
       adlSaving: false,
@@ -213,14 +234,15 @@ export default {
       metadataEdits: {},
       loadingMetadata: false,
       metadataError: '',
-
-      // In-flight action tracking
-      deletingUid: '',      // _uid of EQL row currently being deleted
-      undoingAdlUid: '',    // ADL entry uid currently being undone
     };
   },
 
   computed: {
+    // True when in-memory adl differs from last saved state
+    adlDirty() {
+      return this.adlDirtyFlag;
+    },
+
     // Map of EQL _uid → ADL entry uid for rows targeted by a delete action
     deletedUids() {
       var map = {};
@@ -238,31 +260,22 @@ export default {
       return Object.keys(this.deletedUids).length;
     },
 
-    // Sum a price column across an array of rows
-    baselineTotal() {
-      return this.sumPrice(this.eqlRows);
-    },
-
-    finalTotal() {
-      return this.sumPrice(this.finalRows);
-    },
-
-    priceDelta() {
-      return this.finalTotal - this.baselineTotal;
-    },
-
+    // Price totals
+    baselineTotal() { return this.sumPrice(this.eqlRows); },
+    finalTotal()    { return this.sumPrice(this.finalRows); },
+    priceDelta()    { return this.finalTotal - this.baselineTotal; },
     hasPriceColumn() {
       return this.eqlRows.length > 0 && PRICE_COLUMN in this.eqlRows[0];
     },
 
-    // ADL 'add' entries shaped as pseudo-EQL rows (used in both Final List and Modifications view)
+    // ADL 'add' entries shaped as pseudo-EQL rows (Modifications + Final List views)
     adlAddedRows() {
       return this.adl
         .filter(function(e) { return e.action === 'add'; })
         .map(function(e) {
           return {
             _uid: 'adl-' + e.uid,
-            _adlUid: e.uid,          // ADL entry uid — used by Undo button
+            _adlUid: e.uid,
             QTY: '',
             NOMENCLATURE: e.nomenclature,
             DESCRIPTION: e.notes || '',
@@ -284,12 +297,12 @@ export default {
       });
     },
 
-    // Rows displayed in the table based on current view mode
+    // Rows displayed based on current view mode
     currentRows() {
       return this.viewMode === 'final' ? this.finalRows : this.eqlRows;
     },
 
-    // Ordered column list — key columns first, then remaining, hidden columns excluded
+    // Ordered column list — key columns first, hidden excluded
     eqlDisplayColumns() {
       if (!this.eqlRows.length) return [];
       var keys = Object.keys(this.eqlRows[0]);
@@ -298,7 +311,6 @@ export default {
       return ordered.concat(rest);
     },
 
-    // Current page slice from currentRows
     currentPage() {
       var start = this.eqlPageNum * this.pageSize;
       return this.currentRows.slice(start, start + this.pageSize);
@@ -308,16 +320,12 @@ export default {
       return Math.ceil(this.currentRows.length / this.pageSize);
     },
 
-    // Unique nomenclatures from EQL (for metadata keying)
     nomenclatures() {
       var seen = {};
       var result = [];
       for (var i = 0; i < this.eqlRows.length; i++) {
         var nom = this.eqlRows[i]['NOMENCLATURE'];
-        if (nom && !seen[nom]) {
-          seen[nom] = true;
-          result.push(nom);
-        }
+        if (nom && !seen[nom]) { seen[nom] = true; result.push(nom); }
       }
       return result.sort();
     },
@@ -334,13 +342,11 @@ export default {
       },
     },
 
-    // Reset page and stale errors when view mode changes
     viewMode() {
       this.eqlPageNum = 0;
       this.adlSaveError = '';
     },
 
-    // When EQL loads, init blank metadata edit objects for each unique nomenclature
     nomenclatures(noms) {
       var self = this;
       noms.forEach(function(nom) {
@@ -352,6 +358,14 @@ export default {
   },
 
   methods: {
+
+    // Navigate back — prompt if there are unsaved modifications
+    goBack() {
+      if (this.adlDirtyFlag) {
+        if (!confirm('You have unsaved changes. Leave without saving?')) return;
+      }
+      this.$emit('navigate', 'projects');
+    },
 
     loadProject() {
       this.loadingProject = true;
@@ -376,7 +390,12 @@ export default {
       this.loadingAdl = true;
       var self = this;
       google.script.run
-        .withSuccessHandler(function(data) { self.adl = data || []; self.loadingAdl = false; })
+        .withSuccessHandler(function(data) {
+          self.adl = data || [];
+          self.savedAdl = self.adl.slice(); // snapshot for discard
+          self.adlDirtyFlag = false;
+          self.loadingAdl = false;
+        })
         .withFailureHandler(function(err) { self.adlError = err.message || String(err); self.loadingAdl = false; })
         .getAdl(this.projectId);
     },
@@ -399,28 +418,21 @@ export default {
         .getMetadata(this.projectId);
     },
 
-    // Save a new 'add' entry to the ADL log
+    // ── In-memory modification methods ─────────────────────────────────────
+
+    // Add a new item to the ADL log (in memory — no network call)
     saveAddEntry() {
       if (!this.addForm.nomenclature.trim()) return;
-      this.adlSaving = true;
-      this.adlSaveError = '';
-      var self = this;
-      google.script.run
-        .withSuccessHandler(function() {
-          self.adlSaving = false;
-          self.showAddForm = false;
-          self.addForm = { nomenclature: '', notes: '' };
-          self.loadAdl();
-        })
-        .withFailureHandler(function(err) {
-          self.adlSaveError = err.message || String(err);
-          self.adlSaving = false;
-        })
-        .saveAdlEntry(this.projectId, {
-          action: 'add',
-          nomenclature: this.addForm.nomenclature.trim(),
-          notes: this.addForm.notes.trim(),
-        });
+      this.adl.push({
+        uid: clientUid(),
+        action: 'add',
+        nomenclature: this.addForm.nomenclature.trim(),
+        notes: this.addForm.notes.trim(),
+        timestamp: new Date().toISOString(),
+      });
+      this.adlDirtyFlag = true;
+      this.showAddForm = false;
+      this.addForm = { nomenclature: '', notes: '' };
     },
 
     cancelAddForm() {
@@ -429,92 +441,93 @@ export default {
       this.adlSaveError = '';
     },
 
-    // Check if a row is a main line item (has LIM value, empty O)
     isMainLineItem(row) {
       return row['LIM'] && !row['O'];
     },
 
-    // Get sub line item rows for a main line item (same LIM, non-empty O)
     getSubLineItems(mainRow) {
       var lim = mainRow['LIM'];
-      return this.eqlRows.filter(function(r) {
-        return r['LIM'] === lim && r['O'];
-      });
+      return this.eqlRows.filter(function(r) { return r['LIM'] === lim && r['O']; });
     },
 
-    // Record delete ADL entries — cascades to sub line items when deleting a main line item
+    // Delete a row (in memory — no network call); cascades to sub line items for main items
     deleteRow(row) {
-      this.deletingUid = row._uid;
       var entries = [{ action: 'delete', nomenclature: row['NOMENCLATURE'], targetUid: row._uid, notes: '' }];
 
-      // If main line item, also delete all its sub line items
       if (this.isMainLineItem(row)) {
         var self = this;
-        var subs = this.getSubLineItems(row);
-        subs.forEach(function(sub) {
-          // Skip sub items already deleted
+        this.getSubLineItems(row).forEach(function(sub) {
           if (!self.deletedUids[sub._uid]) {
             entries.push({ action: 'delete', nomenclature: sub['NOMENCLATURE'], targetUid: sub._uid, notes: 'Cascade: main LIM ' + row['LIM'] + ' deleted' });
           }
         });
       }
 
-      var self = this;
-      if (entries.length === 1) {
-        // Single delete — use existing endpoint
-        google.script.run
-          .withSuccessHandler(function() { self.deletingUid = ''; self.loadAdl(); })
-          .withFailureHandler(function(err) { alert(err.message || String(err)); self.deletingUid = ''; })
-          .saveAdlEntry(this.projectId, entries[0]);
-      } else {
-        // Batch delete — use batch endpoint
-        google.script.run
-          .withSuccessHandler(function() { self.deletingUid = ''; self.loadAdl(); })
-          .withFailureHandler(function(err) { alert(err.message || String(err)); self.deletingUid = ''; })
-          .saveAdlEntries(this.projectId, entries);
+      var now = new Date().toISOString();
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        this.adl.push({ uid: clientUid(), action: e.action, nomenclature: e.nomenclature, targetUid: e.targetUid, notes: e.notes, timestamp: now });
       }
+      this.adlDirtyFlag = true;
     },
 
-    // Remove ADL entry/entries by uid (undo a modification)
-    // For main line item undos, also undo cascade-deleted sub items
+    // Undo an ADL entry (in memory — no network call); cascades for main line item deletes
     undoAdlEntry(adlEntryUid) {
-      this.undoingAdlUid = adlEntryUid;
-      var self = this;
-
-      // Find the ADL entry to check if it's a main line item delete
-      var entry = this.adl.find(function(e) { return e.uid === adlEntryUid; });
+      var entry = null;
+      for (var i = 0; i < this.adl.length; i++) {
+        if (this.adl[i].uid === adlEntryUid) { entry = this.adl[i]; break; }
+      }
       var uidsToRemove = [adlEntryUid];
 
       if (entry && entry.action === 'delete' && entry.targetUid) {
-        // Find the original EQL row to check if it's a main line item
-        var mainRow = this.eqlRows.find(function(r) { return r._uid === entry.targetUid; });
+        var mainRow = null;
+        for (var j = 0; j < this.eqlRows.length; j++) {
+          if (this.eqlRows[j]._uid === entry.targetUid) { mainRow = this.eqlRows[j]; break; }
+        }
         if (mainRow && this.isMainLineItem(mainRow)) {
-          // Collect ADL delete entries for sub line items with the same LIM
           var lim = mainRow['LIM'];
           var subUids = {};
-          this.eqlRows.forEach(function(r) {
-            if (r['LIM'] === lim && r['O']) subUids[r._uid] = true;
-          });
+          this.eqlRows.forEach(function(r) { if (r['LIM'] === lim && r['O']) subUids[r._uid] = true; });
           this.adl.forEach(function(e) {
-            if (e.action === 'delete' && e.targetUid && subUids[e.targetUid]) {
-              uidsToRemove.push(e.uid);
-            }
+            if (e.action === 'delete' && e.targetUid && subUids[e.targetUid]) uidsToRemove.push(e.uid);
           });
         }
       }
 
-      if (uidsToRemove.length === 1) {
-        google.script.run
-          .withSuccessHandler(function() { self.undoingAdlUid = ''; self.loadAdl(); })
-          .withFailureHandler(function(err) { alert(err.message || String(err)); self.undoingAdlUid = ''; })
-          .removeAdlEntry(this.projectId, adlEntryUid);
-      } else {
-        google.script.run
-          .withSuccessHandler(function() { self.undoingAdlUid = ''; self.loadAdl(); })
-          .withFailureHandler(function(err) { alert(err.message || String(err)); self.undoingAdlUid = ''; })
-          .removeAdlEntries(this.projectId, uidsToRemove);
-      }
+      var removeSet = {};
+      uidsToRemove.forEach(function(u) { removeSet[u] = true; });
+      this.adl = this.adl.filter(function(e) { return !removeSet[e.uid]; });
+      this.adlDirtyFlag = true;
     },
+
+    // ── Persist / Discard ───────────────────────────────────────────────────
+
+    // Save the full in-memory ADL to Google Drive in one write
+    saveAdl() {
+      this.adlSaving = true;
+      this.adlSaveError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function() {
+          self.savedAdl = self.adl.slice();
+          self.adlDirtyFlag = false;
+          self.adlSaving = false;
+        })
+        .withFailureHandler(function(err) {
+          self.adlSaveError = err.message || String(err);
+          self.adlSaving = false;
+        })
+        .saveAdl(this.projectId, this.adl);
+    },
+
+    // Revert all unsaved changes back to the last saved state
+    discardAdl() {
+      this.adl = this.savedAdl.slice();
+      this.adlDirtyFlag = false;
+      this.adlSaveError = '';
+    },
+
+    // ── Utilities ───────────────────────────────────────────────────────────
 
     sumPrice(rows) {
       var total = 0;

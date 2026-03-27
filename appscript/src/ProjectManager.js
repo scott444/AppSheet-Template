@@ -306,6 +306,20 @@ function removeAdlEntries(projectId, entryUids) {
 }
 
 /**
+ * Overwrite the entire ADL change log for a project in one Drive write.
+ * Called by the frontend when the user explicitly saves their in-memory modifications.
+ * @param {string} projectId
+ * @param {Object[]} adl - The complete ADL array to persist
+ * @returns {{ count: number }} Number of entries saved
+ */
+function saveAdl(projectId, adl) {
+  if (!Array.isArray(adl)) throw new Error('adl must be an array');
+  var entry = findProjectInIndex_(projectId);
+  writeJsonFile_(entry.folderId, 'ADL.json', adl);
+  return { count: adl.length };
+}
+
+/**
  * Remove a single entry from the ADL change log by its uid.
  * Silently succeeds if the entry is not found (idempotent undo).
  * @param {string} projectId
