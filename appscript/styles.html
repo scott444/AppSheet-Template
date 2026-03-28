@@ -212,7 +212,8 @@
 
   /* ── Sheets table ── */
   .sheets-table {
-    width: 100%;
+    width: auto;
+    min-width: 100%;
     border-collapse: collapse;
     margin-top: 16px;
     font-size: 14px;
@@ -227,11 +228,13 @@
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
+    white-space: nowrap;
   }
   .sheets-table td {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     color: var(--text);
+    white-space: nowrap;
   }
   .sheets-table tr:last-child td { border-bottom: none; }
   .sheets-table tr:hover td { background: var(--bg); }
@@ -349,6 +352,8 @@
   /* ── Deleted / added row styling in Modifications view ── */
   .eql-row-deleted td { background:var(--error-bg) !important; color:var(--text-muted); text-decoration:line-through; }
   .eql-row-added td { background:var(--success-bg) !important; color:var(--success-text); }
+  .eql-row-main td { background: #e3f2fd; }
+  .eql-row-sub  td { background: #c7d6e0; }
 
   /* ── Small action buttons in table ── */
   .btn-danger-sm { padding:2px 8px; font-size:12px; background:var(--error-bg); color:var(--error-text); border:none; border-radius:4px; cursor:pointer; line-height:1.6; }
@@ -393,10 +398,6 @@
   /* ── Nomenclature cell (mono, truncated) ── */
   .nomenclature-cell {
     font-weight: 500;
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* ── Context menu ── */

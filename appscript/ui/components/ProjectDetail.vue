@@ -5,10 +5,68 @@
       <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border);padding:6px 12px" @click="goBack">
         <span class="icon" style="font-size:16px">arrow_back</span> Projects
       </button>
-      <div v-if="project" class="section-title" style="margin-bottom:0">
+      <!-- Static title -->
+      <div v-if="project && !editingProject" class="section-title" style="margin-bottom:0;display:flex;align-items:center;gap:8px">
         {{ project.customer }} / {{ project.projectName }}
-        <span style="font-size:13px;color:var(--text-muted);font-weight:400;margin-left:8px">{{ project.date }}</span>
+        <span style="font-size:13px;color:var(--text-muted);font-weight:400">Created: {{ project.date }}</span>
+        <button
+          class="btn"
+          style="padding:4px 8px;font-size:12px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border)"
+          title="Edit project name"
+          @click="startEditProject"
+        >
+          <span class="icon" style="font-size:14px">edit</span>
+        </button>
       </div>
+
+      <!-- Inline edit form -->
+      <div v-if="project && editingProject" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input
+          v-model="editForm.customer"
+          type="text"
+          class="form-input"
+          placeholder="Customer"
+          style="width:180px"
+          :disabled="editSaving"
+        />
+        <span style="color:var(--text-muted)">/</span>
+        <input
+          v-model="editForm.projectName"
+          type="text"
+          class="form-input"
+          placeholder="Project name"
+          style="width:220px"
+          :disabled="editSaving"
+        />
+        <input
+          v-model="editForm.description"
+          type="text"
+          class="form-input"
+          placeholder="Description (optional)"
+          style="width:280px"
+          :disabled="editSaving"
+        />
+        <button
+          class="btn btn-save"
+          :disabled="editSaving || !editForm.customer.trim() || !editForm.projectName.trim()"
+          @click="saveEditProject"
+        >
+          <span class="icon">{{ editSaving ? 'hourglass_empty' : 'save' }}</span>
+          {{ editSaving ? 'Saving...' : 'Save' }}
+        </button>
+        <button
+          class="btn"
+          style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)"
+          :disabled="editSaving"
+          @click="cancelEditProject"
+        >Cancel</button>
+        <div v-if="editError" class="result-box error" style="display:block;margin:0">{{ editError }}</div>
+      </div>
+    </div>
+
+    <!-- Description — shown below header when present -->
+    <div v-if="project && !editingProject && project.description" style="color:var(--text-muted);font-size:13px;margin-top:-12px;margin-bottom:16px">
+      {{ project.description }}
     </div>
 
     <!-- Loading project meta -->
@@ -106,7 +164,9 @@
                 :key="row._uid"
                 :class="{
                   'eql-row-deleted': viewMode === 'modifications' && !row._isAdded && deletedUids[row._uid],
-                  'eql-row-added':   row._isAdded
+                  'eql-row-added':   row._isAdded,
+                  'eql-row-main':    isMainLineItem(row),
+                  'eql-row-sub':     !isMainLineItem(row)
                 }"
                 @contextmenu.prevent="onRowContextMenu($event, row)"
               >
@@ -239,6 +299,12 @@ export default {
       project: null,
       loadingProject: true,
       projectError: '',
+
+      // Inline project edit state
+      editingProject: false,
+      editForm: { customer: '', projectName: '', description: '' },
+      editSaving: false,
+      editError: '',
 
       // EQL data
       eqlRows: [],
@@ -470,11 +536,12 @@ export default {
 
   methods: {
 
-    // Navigate back — prompt if there are unsaved modifications
+    // Navigate back — prompt if there are unsaved modifications; close edit form if open
     goBack() {
       if (this.adlDirtyFlag) {
         if (!confirm('You have unsaved changes. Leave without saving?')) return;
       }
+      if (this.editingProject) this.cancelEditProject();
       this.$emit('navigate', 'projects');
     },
 
@@ -485,6 +552,34 @@ export default {
         .withSuccessHandler(function(data) { self.project = data; self.loadingProject = false; })
         .withFailureHandler(function(err) { self.projectError = err.message || String(err); self.loadingProject = false; })
         .getProject(this.projectId);
+    },
+
+    startEditProject() {
+      this.editForm = { customer: this.project.customer, projectName: this.project.projectName, description: this.project.description || '' };
+      this.editError = '';
+      this.editingProject = true;
+    },
+
+    saveEditProject() {
+      this.editSaving = true;
+      this.editError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(updated) {
+          self.project = updated;
+          self.editingProject = false;
+          self.editSaving = false;
+        })
+        .withFailureHandler(function(err) {
+          self.editError = err.message || String(err);
+          self.editSaving = false;
+        })
+        .updateProject(this.projectId, { customer: this.editForm.customer.trim(), projectName: this.editForm.projectName.trim(), description: this.editForm.description.trim() });
+    },
+
+    cancelEditProject() {
+      this.editingProject = false;
+      this.editError = '';
     },
 
     loadEql() {

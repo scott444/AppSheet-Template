@@ -2,11 +2,14 @@
  * ProjectManager — Manages EQL projects stored as JSON files in Google Drive.
  *
  * Folder layout per project:
- *   app_data/{customer}/{YYYY-MM-DD}_{projectName}/
- *     ├── project.json    — project metadata
+ *   app_data/projects/{projectId}/
+ *     ├── project.json    — project metadata (customer, projectName, date, etc.)
  *     ├── EQL.json        — immutable equipment list rows (parsed from XLSX client-side)
  *     ├── ADL.json        — append-only Add/Delete change log
  *     └── Metadata.json   — item metadata keyed by NOMENCLATURE value
+ *
+ * Folder names are based on the stable project ID — not customer/projectName —
+ * so both fields can be edited freely without any folder rename.
  *
  * Project index:
  *   app_system/projects-index.json — array of lightweight project summaries for fast listing
@@ -67,6 +70,18 @@ function getSystemFolderId_() {
 }
 
 /**
+ * Get or create a named subfolder inside a parent Drive folder.
+ * @param {Folder} parentFolder
+ * @param {string} name
+ * @returns {Folder}
+ */
+function getOrCreateFolder_(parentFolder, name) {
+  var folders = parentFolder.getFoldersByName(name);
+  if (folders.hasNext()) return folders.next();
+  return parentFolder.createFolder(name);
+}
+
+/**
  * Get the app_data folder ID from Script Properties.
  * Throws if Drive folders have not been set up yet.
  * @returns {string}
@@ -95,6 +110,29 @@ function readProjectsIndex_() {
 function writeProjectsIndex_(index) {
   var systemFolderId = getSystemFolderId_();
   writeJsonFile_(systemFolderId, 'projects-index.json', index);
+}
+
+/**
+ * Stamp the current UTC time as `lastModified` on both the index entry and project.json.
+ * Called by every public mutation function after its own writes succeed.
+ * Silently no-ops if the project ID is not found.
+ * @param {string} projectId
+ */
+function touchProject_(projectId) {
+  var now = new Date().toISOString();
+  var index = readProjectsIndex_();
+  for (var i = 0; i < index.length; i++) {
+    if (index[i].id === projectId) {
+      index[i].lastModified = now;
+      var meta = readJsonFile_(index[i].folderId, 'project.json');
+      if (meta) {
+        meta.lastModified = now;
+        writeJsonFile_(index[i].folderId, 'project.json', meta);
+      }
+      writeProjectsIndex_(index);
+      return;
+    }
+  }
 }
 
 /**
@@ -129,21 +167,15 @@ function createProject(customer, projectName, eqlRows) {
   var dataFolderId = getDataFolderId_();
   var dataFolder = DriveApp.getFolderById(dataFolderId);
 
-  // Build folder tree: app_data/{customer}/{YYYY-MM-DD}_{projectName}/
+  // Build folder tree: app_data/projects/{projectId}/
+  // Folder name is the stable project ID — decoupled from customer/projectName
+  // so both fields can be edited later without any folder rename.
   var date = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  var customerFolder = getOrCreateFolder_(dataFolder, customer.trim());
+  var projectsFolder = getOrCreateFolder_(dataFolder, 'projects');
 
-  // Check for duplicate and append suffix if needed
-  var folderName = date + '_' + projectName.trim();
-  var existingFolders = customerFolder.getFoldersByName(folderName);
-  if (existingFolders.hasNext()) {
-    var suffix = 2;
-    while (customerFolder.getFoldersByName(folderName + '-' + suffix).hasNext()) {
-      suffix++;
-    }
-    folderName = folderName + '-' + suffix;
-  }
-  var projectFolder = customerFolder.createFolder(folderName);
+  // Generate project ID first so we can use it as the folder name
+  var projectId = generateUid_();
+  var projectFolder = projectsFolder.createFolder(projectId);
   var projectFolderId = projectFolder.getId();
 
   // Assign UIDs to each EQL row
@@ -156,17 +188,17 @@ function createProject(customer, projectName, eqlRows) {
     return enriched;
   });
 
-  // Generate a project ID
-  var projectId = generateUid_();
-
   // Save project.json
+  var createdAt = new Date().toISOString();
   var projectMeta = {
     id: projectId,
     customer: customer.trim(),
     projectName: projectName.trim(),
+    description: '',
     date: date,
     folderId: projectFolderId,
-    createdAt: new Date().toISOString()
+    createdAt: createdAt,
+    lastModified: createdAt
   };
   writeJsonFile_(projectFolderId, 'project.json', projectMeta);
 
@@ -181,7 +213,8 @@ function createProject(customer, projectName, eqlRows) {
     projectName: projectName.trim(),
     date: date,
     folderId: projectFolderId,
-    createdAt: projectMeta.createdAt
+    createdAt: createdAt,
+    lastModified: createdAt
   });
   writeProjectsIndex_(index);
 
@@ -253,6 +286,7 @@ function saveAdlEntry(projectId, entry) {
   adl.push(newEntry);
 
   writeJsonFile_(projectEntry.folderId, 'ADL.json', adl);
+  touchProject_(projectId);
   return { count: adl.length };
 }
 
@@ -284,6 +318,7 @@ function saveAdlEntries(projectId, entries) {
   }
 
   writeJsonFile_(projectEntry.folderId, 'ADL.json', adl);
+  touchProject_(projectId);
   return { count: adl.length };
 }
 
@@ -302,6 +337,7 @@ function removeAdlEntries(projectId, entryUids) {
   for (var i = 0; i < entryUids.length; i++) { uidSet[entryUids[i]] = true; }
   var filtered = adl.filter(function(e) { return !uidSet[e.uid]; });
   writeJsonFile_(projectEntry.folderId, 'ADL.json', filtered);
+  touchProject_(projectId);
   return { count: filtered.length };
 }
 
@@ -316,6 +352,7 @@ function saveAdl(projectId, adl) {
   if (!Array.isArray(adl)) throw new Error('adl must be an array');
   var entry = findProjectInIndex_(projectId);
   writeJsonFile_(entry.folderId, 'ADL.json', adl);
+  touchProject_(projectId);
   return { count: adl.length };
 }
 
@@ -332,6 +369,7 @@ function removeAdlEntry(projectId, entryUid) {
   var adl = readJsonFile_(projectEntry.folderId, 'ADL.json') || [];
   var filtered = adl.filter(function(e) { return e.uid !== entryUid; });
   writeJsonFile_(projectEntry.folderId, 'ADL.json', filtered);
+  touchProject_(projectId);
   return { count: filtered.length };
 }
 
@@ -356,5 +394,53 @@ function saveMetadata(projectId, metadata) {
   if (!metadata || typeof metadata !== 'object') throw new Error('metadata must be an object');
   var entry = findProjectInIndex_(projectId);
   writeJsonFile_(entry.folderId, 'Metadata.json', metadata);
+  touchProject_(projectId);
   return { saved: true };
+}
+
+/**
+ * Update a project's customer name and/or project name.
+ * Only updates metadata — the folder is identified by its stable folderId,
+ * so no folder rename is needed regardless of what changed.
+ *
+ * @param {string} projectId
+ * @param {{ customer: string, projectName: string }} updates
+ * @returns {Object} The updated project metadata object
+ */
+function updateProject(projectId, updates) {
+  if (!updates || !updates.customer || !updates.customer.trim()) throw new Error('Customer name is required');
+  if (!updates.projectName || !updates.projectName.trim()) throw new Error('Project name is required');
+
+  var customer    = updates.customer.trim();
+  var projectName = updates.projectName.trim();
+
+  // Update project.json inside the project folder
+  var index = readProjectsIndex_();
+  var entryIdx = -1;
+  for (var i = 0; i < index.length; i++) {
+    if (index[i].id === projectId) { entryIdx = i; break; }
+  }
+  if (entryIdx === -1) throw new Error('Project not found: ' + projectId);
+
+  var entry = index[entryIdx];
+  var projectMeta = readJsonFile_(entry.folderId, 'project.json');
+  if (!projectMeta) throw new Error('project.json not found for project: ' + projectId);
+
+  var description = updates.description != null ? updates.description.trim() : (projectMeta.description || '');
+  var now = new Date().toISOString();
+  projectMeta.customer      = customer;
+  projectMeta.projectName   = projectName;
+  projectMeta.description   = description;
+  projectMeta.lastModified  = now;
+  writeJsonFile_(entry.folderId, 'project.json', projectMeta);
+
+  // Update the lightweight index entry (inline lastModified to avoid a double index read/write)
+  index[entryIdx].customer     = customer;
+  index[entryIdx].projectName  = projectName;
+  index[entryIdx].lastModified = now;
+  writeProjectsIndex_(index);
+
+  console.log('ProjectManager: updated project ' + projectId + ' → "' + projectName + '" / "' + customer + '"');
+
+  return projectMeta;
 }

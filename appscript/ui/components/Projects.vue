@@ -27,7 +27,8 @@
           <tr>
             <th>Customer</th>
             <th>Project</th>
-            <th>Date</th>
+            <th>Created Date</th>
+            <th>Last Modified</th>
             <th></th>
           </tr>
         </thead>
@@ -41,6 +42,7 @@
             <td>{{ p.customer }}</td>
             <td>{{ p.projectName }}</td>
             <td style="color:var(--text-muted);font-size:13px">{{ p.date }}</td>
+            <td style="color:var(--text-muted);font-size:13px">{{ p.lastModified ? p.lastModified.slice(0, 10) : '—' }}</td>
             <td style="width:80px">
               <button class="sheet-link" style="background:none;border:none;cursor:pointer;padding:0;font-size:inherit;font-family:inherit" @click.stop="openProject(p.id)">Open →</button>
             </td>
@@ -75,9 +77,12 @@ export default {
       var self = this;
       google.script.run
         .withSuccessHandler(function(data) {
-          // Sort by date descending (newest first)
+          // Sort by lastModified descending (most recently active first);
+          // fall back to date for projects that predate this field.
           self.projects = (data || []).sort(function(a, b) {
-            return b.date.localeCompare(a.date);
+            var aKey = a.lastModified || a.date;
+            var bKey = b.lastModified || b.date;
+            return bKey.localeCompare(aKey);
           });
           self.loading = false;
         })
