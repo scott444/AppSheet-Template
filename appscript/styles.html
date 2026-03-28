@@ -399,6 +399,45 @@
     white-space: nowrap;
   }
 
+  /* ── Context menu ── */
+  .context-menu {
+    position: fixed;
+    z-index: 200;
+    min-width: 180px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow-md);
+    padding: 4px 0;
+    user-select: none;
+  }
+  .context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .context-menu-item .icon {
+    font-family: 'Material Symbols Rounded';
+    font-size: 16px;
+    font-weight: 300;
+    line-height: 1;
+    color: var(--text-muted);
+  }
+  .context-menu-item:hover { background: var(--bg); }
+  .context-menu-item--danger { color: var(--error-text); }
+  .context-menu-item--danger .icon { color: var(--error-text); }
+  .context-menu-item.disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+  .context-menu-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+
   /* ── Responsive: sidebar becomes tab bar at ≤768px ── */
   @media (max-width: 768px) {
     body { grid-template-rows: 56px auto 1fr; }

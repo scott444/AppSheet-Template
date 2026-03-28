@@ -61,6 +61,11 @@
 
         <!-- Inline add form — v-show preserves input state when toggled -->
         <div v-if="viewMode === 'modifications'" v-show="showAddForm" style="background:var(--bg);border-radius:6px;padding:16px;margin-bottom:12px">
+          <!-- Anchor hint — shown when form was opened via Insert Above / Insert Below -->
+          <div v-if="insertAnchor" style="font-size:12px;color:var(--primary);margin-bottom:10px;padding:6px 10px;background:var(--primary-light);border-radius:4px;border-left:3px solid var(--primary)">
+            <span class="icon" style="font-size:14px;vertical-align:middle">{{ insertAnchor.position === 'above' ? 'vertical_align_top' : 'vertical_align_bottom' }}</span>
+            Inserting {{ insertAnchor.position }} <strong>{{ anchorNomenclature }}</strong>
+          </div>
           <div class="form-group">
             <label class="form-label">Nomenclature</label>
             <input v-model="addForm.nomenclature" type="text" class="form-input" placeholder="Equipment nomenclature" />
@@ -95,11 +100,15 @@
               </tr>
             </thead>
             <tbody>
-              <!-- EQL baseline rows -->
+              <!-- Unified row loop — handles EQL rows and ADL-added rows interleaved via modificationsRows -->
               <tr
                 v-for="row in currentPage"
                 :key="row._uid"
-                :class="{ 'eql-row-deleted': viewMode === 'modifications' && deletedUids[row._uid] }"
+                :class="{
+                  'eql-row-deleted': viewMode === 'modifications' && !row._isAdded && deletedUids[row._uid],
+                  'eql-row-added':   row._isAdded
+                }"
+                @contextmenu.prevent="onRowContextMenu($event, row)"
               >
                 <td
                   v-for="col in eqlDisplayColumns"
@@ -108,37 +117,23 @@
                 >{{ row[col] }}</td>
                 <!-- Action column — Modifications mode only -->
                 <td v-if="viewMode === 'modifications'" style="white-space:nowrap">
-                  <button
-                    v-if="!deletedUids[row._uid]"
-                    class="btn-danger-sm"
-                    @click="deleteRow(row)"
-                  >
-                    <span class="icon" style="font-size:14px;vertical-align:middle">delete</span>
-                  </button>
-                  <button
-                    v-else
-                    class="btn-undo-sm"
-                    @click="undoAdlEntry(deletedUids[row._uid])"
-                  >Undo</button>
-                </td>
-              </tr>
-              <!-- ADL-added rows — shown in Modifications view with Undo button -->
-              <tr
-                v-if="viewMode === 'modifications'"
-                v-for="row in adlAddedRows"
-                :key="row._uid"
-                class="eql-row-added"
-              >
-                <td
-                  v-for="col in eqlDisplayColumns"
-                  :key="col"
-                  :class="col === 'NOMENCLATURE' ? 'nomenclature-cell' : ''"
-                >{{ row[col] }}</td>
-                <td style="white-space:nowrap">
-                  <button
-                    class="btn-undo-sm"
-                    @click="undoAdlEntry(row._adlUid)"
-                  >Undo</button>
+                  <template v-if="row._isAdded">
+                    <button class="btn-undo-sm" @click="undoAdlEntry(row._adlUid)">Undo</button>
+                  </template>
+                  <template v-else>
+                    <button
+                      v-if="!deletedUids[row._uid]"
+                      class="btn-danger-sm"
+                      @click="deleteRow(row)"
+                    >
+                      <span class="icon" style="font-size:14px;vertical-align:middle">delete</span>
+                    </button>
+                    <button
+                      v-else
+                      class="btn-undo-sm"
+                      @click="undoAdlEntry(deletedUids[row._uid])"
+                    >Undo</button>
+                  </template>
                 </td>
               </tr>
             </tbody>
@@ -180,6 +175,31 @@
         </p>
       </div>
     </template>
+
+    <!-- Context menu — position: fixed so it renders outside the table's overflow:auto scroll container -->
+    <div
+      v-if="contextMenu.visible"
+      class="context-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      ref="contextMenuEl"
+    >
+      <div class="context-menu-item" @click="ctxInsertAbove">
+        <span class="icon" style="font-size:16px">vertical_align_top</span> Insert Above
+      </div>
+      <div class="context-menu-item" @click="ctxInsertBelow">
+        <span class="icon" style="font-size:16px">vertical_align_bottom</span> Insert Below
+      </div>
+      <div class="context-menu-separator"></div>
+      <div v-if="contextMenu.rowType === 'eql'" class="context-menu-item context-menu-item--danger" @click="ctxDelete">
+        <span class="icon" style="font-size:16px">delete</span> Delete
+      </div>
+      <div v-else-if="contextMenu.rowType === 'eql-deleted'" class="context-menu-item" @click="ctxUndoDelete">
+        <span class="icon" style="font-size:16px">undo</span> Undo Delete
+      </div>
+      <div v-else-if="contextMenu.rowType === 'adl-added'" class="context-menu-item" @click="ctxUndoAdd">
+        <span class="icon" style="font-size:16px">undo</span> Undo Add
+      </div>
+    </div>
   </div>
 </template>
 
@@ -208,6 +228,12 @@ export default {
       viewMode: 'baseline',   // 'baseline' | 'modifications' | 'final'
       showAddForm: false,
       addForm: { nomenclature: '', notes: '' },
+
+      // Insert anchor — set by context menu Insert Above/Below; cleared after saveAddEntry/cancel
+      insertAnchor: null,  // { uid: string, position: 'above' | 'below' } or null
+
+      // Context menu state
+      contextMenu: { visible: false, x: 0, y: 0, row: null, rowType: null },
 
       // Project meta
       project: null,
@@ -268,7 +294,8 @@ export default {
       return this.eqlRows.length > 0 && PRICE_COLUMN in this.eqlRows[0];
     },
 
-    // ADL 'add' entries shaped as pseudo-EQL rows (Modifications + Final List views)
+    // ADL 'add' entries shaped as pseudo-EQL rows — used by finalRows, Final List count,
+    // and as the source for modificationsRows interleaving.
     adlAddedRows() {
       return this.adl
         .filter(function(e) { return e.action === 'add'; })
@@ -276,6 +303,9 @@ export default {
           return {
             _uid: 'adl-' + e.uid,
             _adlUid: e.uid,
+            _isAdded: true,
+            _anchorUid: e.anchorUid || null,
+            _anchorPosition: e.anchorPosition || null,
             QTY: '',
             NOMENCLATURE: e.nomenclature,
             DESCRIPTION: e.notes || '',
@@ -285,6 +315,65 @@ export default {
             'PRODUCT STATUS': 'Added',
           };
         });
+    },
+
+    // Merged list for Modifications view: EQL rows with ADL-added rows interleaved at their
+    // anchor positions. Unanchored adds (toolbar "Add Item") go at the bottom.
+    // Adds whose anchor no longer exists fall back to the bottom (stale anchor graceful degradation).
+    modificationsRows() {
+      var anchorMap = {};  // eqlUid → { above: [addedRow, ...], below: [addedRow, ...] }
+      var unanchored = [];
+
+      var addedRows = this.adlAddedRows;
+      for (var i = 0; i < addedRows.length; i++) {
+        var ar = addedRows[i];
+        if (ar._anchorUid) {
+          if (!anchorMap[ar._anchorUid]) anchorMap[ar._anchorUid] = { above: [], below: [] };
+          anchorMap[ar._anchorUid][ar._anchorPosition || 'below'].push(ar);
+        } else {
+          unanchored.push(ar);
+        }
+      }
+
+      // Walk EQL rows in order, interleaving anchored adds around each row
+      var result = [];
+      var resolvedAnchors = {};
+      for (var j = 0; j < this.eqlRows.length; j++) {
+        var row = this.eqlRows[j];
+        var anchored = anchorMap[row._uid];
+        if (anchored) {
+          resolvedAnchors[row._uid] = true;
+          if (anchored.above.length) result = result.concat(anchored.above);
+          result.push(row);
+          if (anchored.below.length) result = result.concat(anchored.below);
+        } else {
+          result.push(row);
+        }
+      }
+
+      // Any adds whose anchor EQL row no longer exists → fall to bottom (stale anchor)
+      var anchorUids = Object.keys(anchorMap);
+      for (var k = 0; k < anchorUids.length; k++) {
+        if (!resolvedAnchors[anchorUids[k]]) {
+          var stale = anchorMap[anchorUids[k]];
+          unanchored = unanchored.concat(stale.above).concat(stale.below);
+        }
+      }
+
+      return result.concat(unanchored);
+    },
+
+    // Nomenclature label for the insert anchor hint in the add form
+    anchorNomenclature() {
+      if (!this.insertAnchor) return '';
+      var uid = this.insertAnchor.uid;
+      for (var i = 0; i < this.eqlRows.length; i++) {
+        if (this.eqlRows[i]._uid === uid) return this.eqlRows[i]['NOMENCLATURE'] || uid;
+      }
+      for (var j = 0; j < this.adlAddedRows.length; j++) {
+        if (this.adlAddedRows[j]._uid === uid) return this.adlAddedRows[j]['NOMENCLATURE'] || uid;
+      }
+      return uid;
     },
 
     // Clean merged list: EQL minus deleted _uids + ADL adds + metadata merged in
@@ -299,7 +388,9 @@ export default {
 
     // Rows displayed based on current view mode
     currentRows() {
-      return this.viewMode === 'final' ? this.finalRows : this.eqlRows;
+      if (this.viewMode === 'final')         return this.finalRows;
+      if (this.viewMode === 'modifications') return this.modificationsRows;
+      return this.eqlRows;
     },
 
     // Ordered column list — key columns first, hidden excluded
@@ -345,6 +436,7 @@ export default {
     viewMode() {
       this.eqlPageNum = 0;
       this.adlSaveError = '';
+      this.hideContextMenu();
     },
 
     nomenclatures(noms) {
@@ -355,6 +447,25 @@ export default {
         }
       });
     },
+  },
+
+  mounted() {
+    // Bound references stored so we can remove the exact same function in beforeUnmount
+    this._onDocMousedown  = this.onDocumentMousedown.bind(this);
+    this._onDocKeydown    = this.onDocumentKeydown.bind(this);
+    this._onContentScroll = this.hideContextMenu.bind(this);
+    document.addEventListener('mousedown', this._onDocMousedown);
+    document.addEventListener('keydown',   this._onDocKeydown);
+    // Dismiss the context menu when the user scrolls the table container
+    var contentEl = document.querySelector('.content');
+    if (contentEl) contentEl.addEventListener('scroll', this._onContentScroll);
+  },
+
+  beforeUnmount() {
+    document.removeEventListener('mousedown', this._onDocMousedown);
+    document.removeEventListener('keydown',   this._onDocKeydown);
+    var contentEl = document.querySelector('.content');
+    if (contentEl) contentEl.removeEventListener('scroll', this._onContentScroll);
   },
 
   methods: {
@@ -420,23 +531,32 @@ export default {
 
     // ── In-memory modification methods ─────────────────────────────────────
 
-    // Add a new item to the ADL log (in memory — no network call)
+    // Add a new item to the ADL log (in memory — no network call).
+    // If insertAnchor is set (from context menu Insert Above/Below), the ADL entry
+    // includes anchorUid + anchorPosition so modificationsRows can place it correctly.
     saveAddEntry() {
       if (!this.addForm.nomenclature.trim()) return;
-      this.adl.push({
+      var entry = {
         uid: clientUid(),
         action: 'add',
         nomenclature: this.addForm.nomenclature.trim(),
         notes: this.addForm.notes.trim(),
         timestamp: new Date().toISOString(),
-      });
+      };
+      if (this.insertAnchor) {
+        entry.anchorUid      = this.insertAnchor.uid;
+        entry.anchorPosition = this.insertAnchor.position;
+      }
+      this.adl.push(entry);
       this.adlDirtyFlag = true;
       this.showAddForm = false;
+      this.insertAnchor = null;
       this.addForm = { nomenclature: '', notes: '' };
     },
 
     cancelAddForm() {
       this.showAddForm = false;
+      this.insertAnchor = null;
       this.addForm = { nomenclature: '', notes: '' };
       this.adlSaveError = '';
     },
@@ -525,6 +645,82 @@ export default {
       this.adl = this.savedAdl.slice();
       this.adlDirtyFlag = false;
       this.adlSaveError = '';
+    },
+
+    // ── Context Menu ────────────────────────────────────────────────────────
+
+    // Show the context menu for the right-clicked row (Modifications view only)
+    onRowContextMenu(event, row) {
+      if (this.viewMode !== 'modifications') return;
+      var rowType;
+      if (row._isAdded) {
+        rowType = 'adl-added';
+      } else if (this.deletedUids[row._uid]) {
+        rowType = 'eql-deleted';
+      } else {
+        rowType = 'eql';
+      }
+      // Clamp position so menu stays within the viewport
+      this.contextMenu = {
+        visible: true,
+        x: Math.min(event.clientX, window.innerWidth  - 200),
+        y: Math.min(event.clientY, window.innerHeight - 180),
+        row: row,
+        rowType: rowType,
+      };
+    },
+
+    hideContextMenu() {
+      this.contextMenu.visible = false;
+    },
+
+    // Dismiss on outside click
+    onDocumentMousedown(event) {
+      if (!this.contextMenu.visible) return;
+      var el = this.$refs.contextMenuEl;
+      if (el && !el.contains(event.target)) {
+        this.hideContextMenu();
+      }
+    },
+
+    // Dismiss on Escape key
+    onDocumentKeydown(event) {
+      if (event.key === 'Escape') this.hideContextMenu();
+    },
+
+    // Insert a new item above the right-clicked row.
+    // For EQL rows: anchor = that row's _uid.
+    // For ADL-added rows: reuse their own anchorUid (same EQL anchor, position 'above');
+    //   if unanchored, the new item will also be unanchored (goes to bottom).
+    ctxInsertAbove() {
+      var row = this.contextMenu.row;
+      var anchorUid = row._isAdded ? row._anchorUid : row._uid;
+      this.insertAnchor = anchorUid ? { uid: anchorUid, position: 'above' } : null;
+      this.showAddForm = true;
+      this.hideContextMenu();
+    },
+
+    ctxInsertBelow() {
+      var row = this.contextMenu.row;
+      var anchorUid = row._isAdded ? row._anchorUid : row._uid;
+      this.insertAnchor = anchorUid ? { uid: anchorUid, position: 'below' } : null;
+      this.showAddForm = true;
+      this.hideContextMenu();
+    },
+
+    ctxDelete() {
+      this.deleteRow(this.contextMenu.row);
+      this.hideContextMenu();
+    },
+
+    ctxUndoDelete() {
+      this.undoAdlEntry(this.deletedUids[this.contextMenu.row._uid]);
+      this.hideContextMenu();
+    },
+
+    ctxUndoAdd() {
+      this.undoAdlEntry(this.contextMenu.row._adlUid);
+      this.hideContextMenu();
     },
 
     // ── Utilities ───────────────────────────────────────────────────────────
