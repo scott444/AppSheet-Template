@@ -355,6 +355,11 @@
   .eql-row-main td { background: #e3f2fd; }
   .eql-row-sub  td { background: #c7d6e0; }
 
+  /* ── Power Table ── */
+  .pt-row-unmatched td { color: var(--text-muted); background: var(--bg) !important; font-style: italic; }
+  .pt-totals-table tfoot .pt-totals-footer td { border-top: 2px solid var(--border); background: var(--bg); }
+  .pt-totals-unassigned td { color: var(--text-muted); font-style: italic; }
+
   /* ── Small action buttons in table ── */
   .btn-danger-sm { padding:2px 8px; font-size:12px; background:var(--error-bg); color:var(--error-text); border:none; border-radius:4px; cursor:pointer; line-height:1.6; }
   .btn-danger-sm:disabled { opacity:0.5; cursor:not-allowed; }

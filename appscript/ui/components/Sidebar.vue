@@ -26,6 +26,8 @@ export default {
       items: [
         { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
         { id: 'projects', icon: 'folder_open', label: 'Projects' },
+        { id: 'product-catalog', icon: 'inventory_2', label: 'Product Catalog' },
+        { id: 'power-tables', icon: 'bolt', label: 'Power Tables' },
         { id: 'sheets', icon: 'table_chart', label: 'My Sheets' },
         { id: 'drive-setup', icon: 'create_new_folder', label: 'Drive Setup' },
         { id: 'getting-started', icon: 'rocket_launch', label: 'Getting Started' },

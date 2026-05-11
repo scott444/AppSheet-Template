@@ -133,3 +133,55 @@ The `definition.json` file defines your app's structure:
 ```
 
 The validator checks for: missing keys, duplicate names, broken Ref targets, empty Enums, and invalid view/action references.
+
+## Power Table CSV Formats
+
+The Power Table tab joins Equipment List (EQL) rows to physical equipment specs via two uploaded CSV tables.
+
+### Mapping Table
+
+Maps EQL line items (Nomenclature + Option) to one or more pieces of physical equipment. One EQL row can expand to multiple equipment rows.
+
+```csv
+Nomenclature,Option,Nomenclature Description,Multiple,Power Description,Manufacturer,Model
+ABC123,,1,Main Server,Dell,PowerEdge R760
+ABC123,,1,Server UPS,APC,Smart-UPS 3000
+ABC123,OPT1,2,GPU Accelerator,NVIDIA,H100
+```
+
+| Column | Description |
+| --- | --- |
+| `Nomenclature` | Line Item identifier (join key with EQL) |
+| `Option` | Option code (blank for base items, when not blank acts as join key with EQL) |
+| `Nomenclature Description` | Nomenclature product description |
+| `Multiple` | How many of this equipment per EQL line item |
+| `Power Description` | Equipment Power description |
+| `Manufacturer` | Equipment manufacturer (join key with Equipment table) |
+| `Model` | Equipment model (join key with Equipment table) |
+
+### Equipment Table
+
+Physical and power specifications keyed by Manufacturer + Model.
+
+```csv
+Manufacturer,Model,Key,PSU,AC volts min,AC volts max,AC amps max,DC volts,DC amps max,Watts max,VA max,BTU max,H (in),W (in),D (in),Weight (LBs),Operating Temp °F (min),Operating Temp °F (max),Storage Temp °F (min),Storage Temp °F (max),RU
+```
+
+| Column | Description |
+| --- | --- |
+| `Manufacturer` | Equipment manufacturer (join key) |
+| `Model` | Equipment model (join key) |
+| `Key` | Used in Google Sheets only |
+| `PSU` | Power supply units |
+| `AC volts min` | Maximum power draw (watts) |
+| `AC volts max` | Maximum power draw (watts) |
+| `AC amps max` | Maximum AC current draw |
+| `DC volts max` | Maximum AC power draw |
+| `DC amps max` | Maximum DC current draw |
+| `Watts max` | Maximum power draw (watts) |
+| `VA max` | Maximum volt-amperes |
+| `BTU max` | Maximum heat output |
+| `Weight (LBs)` | Weight in pounds |
+| `RU` | Rack units |
+
+All other columns (voltage/temp ranges, physical dimensions) are displayed as-is. Totals per rack are calculated for PSU, Watts max, AC amps max, VA max, BTU max, and Weight (LBs).

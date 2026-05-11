@@ -28,6 +28,8 @@
         :project-id="selectedProjectId"
         @navigate="navigate"
       />
+      <ProductCatalog v-if="currentSection === 'product-catalog'" />
+      <PowerTables v-if="currentSection === 'power-tables'" />
       <MySheets v-if="currentSection === 'sheets'" />
       <DriveSetup v-if="currentSection === 'drive-setup'" />
       <GettingStarted v-if="currentSection === 'getting-started'" />
@@ -42,14 +44,16 @@ import Projects from './components/Projects.vue';
 import EqlUpload from './components/EqlUpload.vue';
 import ProjectDetail from './components/ProjectDetail.vue';
 import MySheets from './components/MySheets.vue';
+import ProductCatalog from './components/ProductCatalog.vue';
+import PowerTables from './components/PowerTables.vue';
 import DriveSetup from './components/DriveSetup.vue';
 import GettingStarted from './components/GettingStarted.vue';
 
 // Sections that map to a sidebar nav item (sub-pages won't highlight a nav item)
-var SIDEBAR_SECTIONS = ['dashboard', 'projects', 'sheets', 'drive-setup', 'getting-started'];
+var SIDEBAR_SECTIONS = ['dashboard', 'projects', 'product-catalog', 'power-tables', 'sheets', 'drive-setup', 'getting-started'];
 
 export default {
-  components: { Sidebar, Dashboard, Projects, EqlUpload, ProjectDetail, MySheets, DriveSetup, GettingStarted },
+  components: { Sidebar, Dashboard, Projects, EqlUpload, ProjectDetail, MySheets, ProductCatalog, PowerTables, DriveSetup, GettingStarted },
 
   data() {
     return {

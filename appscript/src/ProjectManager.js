@@ -148,7 +148,43 @@ function findProjectInIndex_(projectId) {
   throw new Error('Project not found: ' + projectId);
 }
 
+/**
+ * Default column configuration — used when app_system/column-config.json does not exist.
+ */
+var DEFAULT_COLUMN_CONFIG_ = {
+  keyColumns: ['OPT','COF','DS','CUST REF','ORGANIZER 1','ORGANIZER 2','SUB SYS ID','ORGANIZER 3','ORGANIZER 4','LIST ID','LIM','O','APC','QTY','NOMENCLATURE','DESCRIPTION','UNIT LIST','EXT LIST','TOTAL QTY','EXT EXCHANGE RATE','EXT STAGING','EXT FIELD','EXT DROPSHIP','CUSTOMER DISCOUNT (%)','UNIT CUSTOMER DISCOUNT','EXT CUSTOMER DISCOUNT','FAMILY GROUP','PRODUCT STATUS','PRODUCT STATUS REFRESH DATE','CFG','LOCATION','OPTIONAL','ORGANIZER 5','ORGANIZER 6','ORGANIZER 7','ORGANIZER 8','EID','PID','TERM','CURRENCY','DESIGN QUOTE','REPORT RUN DATE','SORT ORDER','COUNTRY OF ORIGIN','PARAMETRIC DATA'],
+  hiddenColumns: ['_uid'],
+  priceColumn: 'EXT LIST',
+  mainLineItem: { limColumn: 'LIM', optColumn: 'O' }
+};
+
 // ── Public API (callable via google.script.run) ───────────────────────────
+
+/**
+ * Read column configuration from app_system/column-config.json.
+ * Returns the stored config merged over defaults, or just defaults if the file is absent.
+ * @returns {{ keyColumns: string[], hiddenColumns: string[], priceColumn: string, mainLineItem: { limColumn: string, optColumn: string } }}
+ */
+function getColumnConfig() {
+  try {
+    var systemFolderId = getSystemFolderId_();
+    var config = readJsonFile_(systemFolderId, 'column-config.json');
+    if (config && typeof config === 'object') {
+      return {
+        keyColumns:    Array.isArray(config.keyColumns)    ? config.keyColumns    : DEFAULT_COLUMN_CONFIG_.keyColumns,
+        hiddenColumns: Array.isArray(config.hiddenColumns) ? config.hiddenColumns : DEFAULT_COLUMN_CONFIG_.hiddenColumns,
+        priceColumn:   config.priceColumn || DEFAULT_COLUMN_CONFIG_.priceColumn,
+        mainLineItem: {
+          limColumn: (config.mainLineItem && config.mainLineItem.limColumn) || DEFAULT_COLUMN_CONFIG_.mainLineItem.limColumn,
+          optColumn: (config.mainLineItem && config.mainLineItem.optColumn) || DEFAULT_COLUMN_CONFIG_.mainLineItem.optColumn
+        }
+      };
+    }
+  } catch (e) {
+    console.log('getColumnConfig: error reading config, using defaults — ' + e.message);
+  }
+  return DEFAULT_COLUMN_CONFIG_;
+}
 
 /**
  * Create a new project: builds the folder tree, saves EQL.json (with UIDs),
@@ -198,7 +234,9 @@ function createProject(customer, projectName, eqlRows) {
     date: date,
     folderId: projectFolderId,
     createdAt: createdAt,
-    lastModified: createdAt
+    lastModified: createdAt,
+    baselineCatalogId: null,
+    modificationCatalogId: null
   };
   writeJsonFile_(projectFolderId, 'project.json', projectMeta);
 
@@ -432,6 +470,14 @@ function updateProject(projectId, updates) {
   projectMeta.projectName   = projectName;
   projectMeta.description   = description;
   projectMeta.lastModified  = now;
+
+  // Catalog version linkage (optional fields — only update if explicitly provided)
+  if ('baselineCatalogId' in updates) {
+    projectMeta.baselineCatalogId = updates.baselineCatalogId || null;
+  }
+  if ('modificationCatalogId' in updates) {
+    projectMeta.modificationCatalogId = updates.modificationCatalogId || null;
+  }
   writeJsonFile_(entry.folderId, 'project.json', projectMeta);
 
   // Update the lightweight index entry (inline lastModified to avoid a double index read/write)
@@ -443,4 +489,44 @@ function updateProject(projectId, updates) {
   console.log('ProjectManager: updated project ' + projectId + ' → "' + projectName + '" / "' + customer + '"');
 
   return projectMeta;
+}
+
+/**
+ * Get the per-project Power Table data (rack definitions, assignments, active mapping/equipment IDs).
+ * Returns defaults if PowerTable.json does not exist or was saved by an older version.
+ * @param {string} projectId
+ * @returns {{ activeMappingTableId: string|null, activeEquipmentTableId: string|null, racks: string[], rackAssignments: Object }}
+ */
+function getPowerTableData(projectId) {
+  var entry = findProjectInIndex_(projectId);
+  var data = readJsonFile_(entry.folderId, 'PowerTable.json');
+  if (!data) {
+    return { activeMappingTableId: null, activeEquipmentTableId: null, racks: [], rackAssignments: {} };
+  }
+  // Backward compat: v1 stored activeTableId — ignore it, return new shape with defaults
+  return {
+    activeMappingTableId:   data.activeMappingTableId   || null,
+    activeEquipmentTableId: data.activeEquipmentTableId || null,
+    racks:                  Array.isArray(data.racks) ? data.racks : [],
+    rackAssignments:        (data.rackAssignments && typeof data.rackAssignments === 'object') ? data.rackAssignments : {}
+  };
+}
+
+/**
+ * Save the per-project Power Table data.
+ * @param {string} projectId
+ * @param {{ activeMappingTableId: string|null, activeEquipmentTableId: string|null, racks: string[], rackAssignments: Object }} data
+ * @returns {{ saved: boolean }}
+ */
+function savePowerTableData(projectId, data) {
+  if (!data || typeof data !== 'object') throw new Error('data must be an object');
+  var entry = findProjectInIndex_(projectId);
+  writeJsonFile_(entry.folderId, 'PowerTable.json', {
+    activeMappingTableId:   data.activeMappingTableId   || null,
+    activeEquipmentTableId: data.activeEquipmentTableId || null,
+    racks:                  Array.isArray(data.racks) ? data.racks : [],
+    rackAssignments:        (data.rackAssignments && typeof data.rackAssignments === 'object') ? data.rackAssignments : {}
+  });
+  touchProject_(projectId);
+  return { saved: true };
 }

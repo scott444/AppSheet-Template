@@ -74,13 +74,17 @@
     <div v-else-if="projectError" class="result-box error" style="display:block">{{ projectError }}</div>
 
     <template v-else-if="project">
-      <!-- Tab bar — Equipment List tab only; more tabs added here in the future -->
+      <!-- Tab bar -->
       <div class="tab-bar">
-        <div class="tab-item active">Equipment List</div>
+        <div :class="['tab-item', { active: activeTab === 'equipment-list' }]" @click="activeTab = 'equipment-list'">Equipment List</div>
+        <div :class="['tab-item', { active: activeTab === 'power-table' }]" @click="switchToPowerTab">
+          Power Table
+          <span v-if="ptSaving" style="font-size:11px;color:var(--text-muted);margin-left:6px">Saving...</span>
+        </div>
       </div>
 
       <!-- ── Equipment List Tab ── -->
-      <div class="card" style="margin-top:0;border-radius:0 8px 8px 8px">
+      <div v-if="activeTab === 'equipment-list'" class="card" style="margin-top:0;border-radius:0 8px 8px 8px">
 
         <!-- Card header: title + view-mode toggle -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -89,10 +93,38 @@
             <span v-if="viewMode === 'final'">{{ finalRows.length }} items</span>
             <span v-else>{{ eqlRows.length }} items</span>
           </div>
-          <div class="view-mode-bar">
-            <button :class="['view-mode-btn', { active: viewMode === 'baseline' }]" @click="viewMode = 'baseline'">Baseline</button>
-            <button :class="['view-mode-btn', { active: viewMode === 'modifications' }]" @click="viewMode = 'modifications'">Modifications</button>
-            <button :class="['view-mode-btn', { active: viewMode === 'final' }]" @click="viewMode = 'final'">Final List</button>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div class="view-mode-bar">
+              <button :class="['view-mode-btn', { active: viewMode === 'baseline' }]" @click="viewMode = 'baseline'">Baseline</button>
+              <button :class="['view-mode-btn', { active: viewMode === 'modifications' }]" @click="viewMode = 'modifications'">Modifications</button>
+              <button :class="['view-mode-btn', { active: viewMode === 'final' }]" @click="viewMode = 'final'">Final List</button>
+            </div>
+            <!-- Catalog version selector — contextual to baseline or modifications view -->
+            <div v-if="catalogs.length && (viewMode === 'baseline' || viewMode === 'modifications')" style="display:flex;align-items:center;gap:6px;font-size:13px">
+              <span style="color:var(--text-muted);white-space:nowrap">Catalog:</span>
+              <select
+                v-if="viewMode === 'baseline'"
+                :value="baselineCatalogId || ''"
+                :disabled="catalogSaving"
+                class="form-input"
+                style="width:auto;min-width:180px;padding:4px 8px;font-size:13px"
+                @change="baselineCatalogId = $event.target.value || null; saveCatalogSelection('baselineCatalogId', baselineCatalogId)"
+              >
+                <option value="">None selected</option>
+                <option v-for="cat in catalogs" :key="cat.id" :value="cat.id">{{ cat.name }} — {{ cat.version }}</option>
+              </select>
+              <select
+                v-if="viewMode === 'modifications'"
+                :value="modificationCatalogId || ''"
+                :disabled="catalogSaving"
+                class="form-input"
+                style="width:auto;min-width:180px;padding:4px 8px;font-size:13px"
+                @change="modificationCatalogId = $event.target.value || null; saveCatalogSelection('modificationCatalogId', modificationCatalogId)"
+              >
+                <option value="">None selected</option>
+                <option v-for="cat in catalogs" :key="cat.id" :value="cat.id">{{ cat.name }} — {{ cat.version }}</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -234,6 +266,395 @@
           Final List reflects all modifications applied — {{ deletedUidsCount }} deleted, {{ adlAddedRows.length }} added.
         </p>
       </div>
+
+      <!-- ── Power Table Tab ── -->
+      <template v-if="activeTab === 'power-table'">
+
+        <!-- ── Mapping Table Selector ── -->
+        <div class="card" style="margin-top:0;border-radius:0 8px 8px 8px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div class="card-title" style="margin-bottom:0">
+              Mapping Table
+              <span v-if="ptMappingTableId && !ptShowMappingSelector" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:6px">— {{ ptMappingActiveLabel }}</span>
+            </div>
+            <button class="btn" style="font-size:13px;padding:5px 12px" @click="ptShowMappingSelector = !ptShowMappingSelector">
+              <span class="icon" style="font-size:15px">{{ ptShowMappingSelector ? 'close' : 'table_rows' }}</span>
+              {{ ptShowMappingSelector ? 'Close' : (ptMappingTableId ? 'Change' : 'Select Table') }}
+            </button>
+          </div>
+
+          <template v-if="ptShowMappingSelector">
+            <!-- Upload form -->
+            <div style="margin-top:16px;padding:16px;background:var(--bg);border-radius:6px">
+              <div style="font-size:13px;font-weight:500;margin-bottom:10px;color:var(--text)">Upload New Version</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Required columns: LIM, O, Multiple, Description, Manufacturer, Model</div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:160px">
+                  <label class="form-label">Table Name</label>
+                  <input v-model="ptMappingUploadForm.name" type="text" class="form-input" placeholder="e.g. Standard Mapping" :disabled="ptMappingUploading" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
+                  <label class="form-label">Version</label>
+                  <input v-model="ptMappingUploadForm.version" type="text" class="form-input" placeholder="e.g. 2026-Q1" :disabled="ptMappingUploading" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px">
+                  <label class="form-label">CSV File</label>
+                  <input ref="ptMappingFileInput" type="file" accept=".csv" class="form-input" :disabled="ptMappingUploading" @change="ptMappingOnFileSelected" />
+                </div>
+              </div>
+              <div v-if="ptMappingParsedRows.length === 0 && ptMappingUploadForm.file && !ptMappingParseError" style="margin-top:10px">
+                <button class="btn" :disabled="ptMappingUploading" @click="ptMappingParseFile">
+                  <span class="icon">preview</span> Preview
+                </button>
+              </div>
+              <div v-if="ptMappingParseError" class="result-box error" style="display:block;margin-top:10px">{{ ptMappingParseError }}</div>
+              <div v-if="ptMappingParsedRows.length" style="margin-top:10px">
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px">{{ ptMappingParsedRows.length }} rows, {{ ptMappingParsedCols.length }} columns — preview (5 rows)</p>
+                <div style="overflow-x:auto">
+                  <table class="sheets-table" style="margin-top:0;font-size:12px">
+                    <thead><tr><th v-for="col in ptMappingParsedCols.slice(0,10)" :key="col">{{ col }}</th></tr></thead>
+                    <tbody><tr v-for="(row,i) in ptMappingParsedRows.slice(0,5)" :key="i"><td v-for="col in ptMappingParsedCols.slice(0,10)" :key="col">{{ row[col] }}</td></tr></tbody>
+                  </table>
+                </div>
+                <div class="btn-row" style="margin-top:10px">
+                  <button class="btn btn-save" :disabled="ptMappingUploading || !ptMappingUploadForm.name.trim() || !ptMappingUploadForm.version.trim()" @click="ptMappingUploadTable">
+                    <span class="icon">{{ ptMappingUploading ? 'hourglass_empty' : 'cloud_upload' }}</span>
+                    {{ ptMappingUploading ? 'Uploading...' : 'Upload Table' }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="ptMappingUploadError" class="result-box error" style="display:block;margin-top:10px">{{ ptMappingUploadError }}</div>
+            </div>
+            <!-- Existing versions -->
+            <div style="margin-top:12px">
+              <div v-if="ptMappingTableLoading" style="color:var(--text-muted);font-size:13px">Loading...</div>
+              <div v-else-if="ptMappingTableError" class="result-box error" style="display:block">{{ ptMappingTableError }}</div>
+              <div v-else-if="!ptMappingTableList.length" style="font-size:13px;color:var(--text-muted)">No mapping tables uploaded yet.</div>
+              <table v-else class="sheets-table" style="margin-top:0">
+                <thead><tr><th>Name</th><th>Version</th><th>Rows</th><th>Created</th><th style="width:120px"></th></tr></thead>
+                <tbody>
+                  <tr v-for="tbl in ptMappingTableList" :key="tbl.id" style="cursor:pointer" @click="ptSelectMappingTable(tbl.id)">
+                    <td style="font-weight:500">{{ tbl.name }}</td>
+                    <td>{{ tbl.version }}</td>
+                    <td>{{ tbl.rowCount }}</td>
+                    <td style="color:var(--text-muted);font-size:12px">{{ formatDate(tbl.createdAt) }}</td>
+                    <td style="text-align:right;white-space:nowrap">
+                      <button class="btn btn-save" style="font-size:12px;padding:3px 10px;margin-right:6px" @click.stop="ptSelectMappingTable(tbl.id)">
+                        {{ ptMappingTableId === tbl.id ? '✓ Active' : 'Use' }}
+                      </button>
+                      <button class="btn-danger-sm" title="Delete" @click.stop="ptMappingConfirmDelete(tbl)">
+                        <span class="icon" style="font-size:14px;vertical-align:middle">delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- Mapping delete dialog -->
+          <div v-if="ptMappingDeleteTarget" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:100;display:flex;align-items:center;justify-content:center" @click.self="ptMappingDeleteTarget = null">
+            <div class="card" style="max-width:400px;margin:0">
+              <div class="card-title">Delete Mapping Table</div>
+              <p style="margin-bottom:16px">Delete <strong>{{ ptMappingDeleteTarget.name }}</strong> v{{ ptMappingDeleteTarget.version }}? This cannot be undone.</p>
+              <div class="btn-row">
+                <button class="btn" style="background:var(--error-text)" :disabled="ptMappingDeleting" @click="ptMappingDoDelete">
+                  <span class="icon">{{ ptMappingDeleting ? 'hourglass_empty' : 'delete' }}</span>
+                  {{ ptMappingDeleting ? 'Deleting...' : 'Delete' }}
+                </button>
+                <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" :disabled="ptMappingDeleting" @click="ptMappingDeleteTarget = null">Cancel</button>
+              </div>
+              <div v-if="ptMappingDeleteError" class="result-box error" style="display:block;margin-top:10px">{{ ptMappingDeleteError }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Equipment Table Selector ── -->
+        <div class="card" style="margin-top:0;border-radius:8px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div class="card-title" style="margin-bottom:0">
+              Equipment Table
+              <span v-if="ptEquipmentTableId && !ptShowEquipmentSelector" style="font-size:13px;font-weight:400;color:var(--text-muted);margin-left:6px">— {{ ptEquipmentActiveLabel }}</span>
+            </div>
+            <button class="btn" style="font-size:13px;padding:5px 12px" @click="ptShowEquipmentSelector = !ptShowEquipmentSelector">
+              <span class="icon" style="font-size:15px">{{ ptShowEquipmentSelector ? 'close' : 'electrical_services' }}</span>
+              {{ ptShowEquipmentSelector ? 'Close' : (ptEquipmentTableId ? 'Change' : 'Select Table') }}
+            </button>
+          </div>
+
+          <template v-if="ptShowEquipmentSelector">
+            <!-- Upload form -->
+            <div style="margin-top:16px;padding:16px;background:var(--bg);border-radius:6px">
+              <div style="font-size:13px;font-weight:500;margin-bottom:10px;color:var(--text)">Upload New Version</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Required columns: Manufacturer, Model (plus optional power/physical specs)</div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:160px">
+                  <label class="form-label">Table Name</label>
+                  <input v-model="ptEquipmentUploadForm.name" type="text" class="form-input" placeholder="e.g. Power Specs Master" :disabled="ptEquipmentUploading" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
+                  <label class="form-label">Version</label>
+                  <input v-model="ptEquipmentUploadForm.version" type="text" class="form-input" placeholder="e.g. 2026-Q1" :disabled="ptEquipmentUploading" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px">
+                  <label class="form-label">CSV File</label>
+                  <input ref="ptEquipmentFileInput" type="file" accept=".csv" class="form-input" :disabled="ptEquipmentUploading" @change="ptEquipmentOnFileSelected" />
+                </div>
+              </div>
+              <div v-if="ptEquipmentParsedRows.length === 0 && ptEquipmentUploadForm.file && !ptEquipmentParseError" style="margin-top:10px">
+                <button class="btn" :disabled="ptEquipmentUploading" @click="ptEquipmentParseFile">
+                  <span class="icon">preview</span> Preview
+                </button>
+              </div>
+              <div v-if="ptEquipmentParseError" class="result-box error" style="display:block;margin-top:10px">{{ ptEquipmentParseError }}</div>
+              <div v-if="ptEquipmentParsedRows.length" style="margin-top:10px">
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px">{{ ptEquipmentParsedRows.length }} rows, {{ ptEquipmentParsedCols.length }} columns — preview (5 rows)</p>
+                <div style="overflow-x:auto">
+                  <table class="sheets-table" style="margin-top:0;font-size:12px">
+                    <thead><tr><th v-for="col in ptEquipmentParsedCols.slice(0,10)" :key="col">{{ col }}</th></tr></thead>
+                    <tbody><tr v-for="(row,i) in ptEquipmentParsedRows.slice(0,5)" :key="i"><td v-for="col in ptEquipmentParsedCols.slice(0,10)" :key="col">{{ row[col] }}</td></tr></tbody>
+                  </table>
+                </div>
+                <div class="btn-row" style="margin-top:10px">
+                  <button class="btn btn-save" :disabled="ptEquipmentUploading || !ptEquipmentUploadForm.name.trim() || !ptEquipmentUploadForm.version.trim()" @click="ptEquipmentUploadTable">
+                    <span class="icon">{{ ptEquipmentUploading ? 'hourglass_empty' : 'cloud_upload' }}</span>
+                    {{ ptEquipmentUploading ? 'Uploading...' : 'Upload Table' }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="ptEquipmentUploadError" class="result-box error" style="display:block;margin-top:10px">{{ ptEquipmentUploadError }}</div>
+            </div>
+            <!-- Existing versions -->
+            <div style="margin-top:12px">
+              <div v-if="ptEquipmentTableLoading" style="color:var(--text-muted);font-size:13px">Loading...</div>
+              <div v-else-if="ptEquipmentTableError" class="result-box error" style="display:block">{{ ptEquipmentTableError }}</div>
+              <div v-else-if="!ptEquipmentTableList.length" style="font-size:13px;color:var(--text-muted)">No equipment tables uploaded yet.</div>
+              <table v-else class="sheets-table" style="margin-top:0">
+                <thead><tr><th>Name</th><th>Version</th><th>Rows</th><th>Created</th><th style="width:120px"></th></tr></thead>
+                <tbody>
+                  <tr v-for="tbl in ptEquipmentTableList" :key="tbl.id" style="cursor:pointer" @click="ptSelectEquipmentTable(tbl.id)">
+                    <td style="font-weight:500">{{ tbl.name }}</td>
+                    <td>{{ tbl.version }}</td>
+                    <td>{{ tbl.rowCount }}</td>
+                    <td style="color:var(--text-muted);font-size:12px">{{ formatDate(tbl.createdAt) }}</td>
+                    <td style="text-align:right;white-space:nowrap">
+                      <button class="btn btn-save" style="font-size:12px;padding:3px 10px;margin-right:6px" @click.stop="ptSelectEquipmentTable(tbl.id)">
+                        {{ ptEquipmentTableId === tbl.id ? '✓ Active' : 'Use' }}
+                      </button>
+                      <button class="btn-danger-sm" title="Delete" @click.stop="ptEquipmentConfirmDelete(tbl)">
+                        <span class="icon" style="font-size:14px;vertical-align:middle">delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- Equipment delete dialog -->
+          <div v-if="ptEquipmentDeleteTarget" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:100;display:flex;align-items:center;justify-content:center" @click.self="ptEquipmentDeleteTarget = null">
+            <div class="card" style="max-width:400px;margin:0">
+              <div class="card-title">Delete Equipment Table</div>
+              <p style="margin-bottom:16px">Delete <strong>{{ ptEquipmentDeleteTarget.name }}</strong> v{{ ptEquipmentDeleteTarget.version }}? This cannot be undone.</p>
+              <div class="btn-row">
+                <button class="btn" style="background:var(--error-text)" :disabled="ptEquipmentDeleting" @click="ptEquipmentDoDelete">
+                  <span class="icon">{{ ptEquipmentDeleting ? 'hourglass_empty' : 'delete' }}</span>
+                  {{ ptEquipmentDeleting ? 'Deleting...' : 'Delete' }}
+                </button>
+                <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" :disabled="ptEquipmentDeleting" @click="ptEquipmentDeleteTarget = null">Cancel</button>
+              </div>
+              <div v-if="ptEquipmentDeleteError" class="result-box error" style="display:block;margin-top:10px">{{ ptEquipmentDeleteError }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- No tables selected — prompt -->
+        <div v-if="!ptMappingTableId || !ptEquipmentTableId" class="card" style="margin-top:0;border-radius:8px">
+          <div class="empty-state">
+            <span v-if="!ptMappingTableId">Select a <strong>Mapping Table</strong> above to begin.</span>
+            <span v-else-if="!ptEquipmentTableId">Select an <strong>Equipment Table</strong> above to begin.</span>
+          </div>
+        </div>
+
+        <!-- Power Table content — shown once both tables are selected -->
+        <template v-else>
+
+          <!-- Rack manager -->
+          <div class="card" style="margin-top:0;border-radius:8px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:500;color:var(--text)">Racks:</span>
+              <span
+                v-for="rack in ptRacks"
+                :key="rack"
+                style="display:inline-flex;align-items:center;gap:4px;background:var(--primary-light);color:var(--primary);border-radius:12px;padding:2px 10px;font-size:13px"
+              >
+                {{ rack }}
+                <span class="icon" style="font-size:14px;cursor:pointer;opacity:0.7" title="Remove rack" @click="removeRack(rack)">close</span>
+              </span>
+              <div style="display:inline-flex;align-items:center;gap:6px">
+                <input
+                  v-model="ptNewRack"
+                  type="text"
+                  class="form-input"
+                  placeholder="New rack name..."
+                  style="width:160px;padding:4px 10px;font-size:13px"
+                  @keyup.enter="addRack"
+                />
+                <button class="btn" style="padding:4px 12px;font-size:13px" :disabled="!ptNewRack.trim()" @click="addRack">
+                  <span class="icon" style="font-size:15px">add</span> Add Rack
+                </button>
+              </div>
+              <span v-if="ptSaveError" style="font-size:12px;color:var(--error-text)">{{ ptSaveError }}</span>
+            </div>
+          </div>
+
+          <!-- Power table card -->
+          <div class="card" style="margin-top:0;border-radius:8px">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+              <div class="card-title" style="margin-bottom:0">
+                Power Table
+                <span v-if="!ptMappingLoading && !ptEquipmentLoading" style="font-size:13px;font-weight:400;color:var(--text-muted)">
+                  — {{ filteredPowerRows.length }} rows &middot; {{ visiblePowerCols.length }} / {{ ptAllColumns.length }} equipment columns
+                  <span v-if="ptUnmatchedCount" style="color:var(--error-text);margin-left:6px">
+                    <span class="icon" style="font-size:13px;vertical-align:middle">warning</span>
+                    {{ ptUnmatchedCount }} unmatched
+                  </span>
+                </span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="icon" style="font-size:18px;color:var(--text-muted)">search</span>
+                  <input v-model="ptSearch" type="text" class="form-input" placeholder="Search..." style="width:200px" />
+                </div>
+                <button class="btn" style="font-size:13px;padding:5px 12px" @click="ptShowColPicker = !ptShowColPicker">
+                  <span class="icon" style="font-size:15px">view_column</span>
+                  Columns
+                </button>
+              </div>
+            </div>
+
+            <!-- Column picker -->
+            <div v-if="ptShowColPicker" style="padding:12px 16px;background:var(--bg);border-radius:6px;margin-bottom:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:13px;font-weight:500">Equipment Columns</span>
+                <button class="btn" style="font-size:12px;padding:3px 10px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" @click="resetPtCols">Reset all</button>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 20px">
+                <label v-for="col in ptAllColumns" :key="col" style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap">
+                  <input type="checkbox" :checked="ptVisibleCols[col]" @change="togglePtCol(col, $event.target.checked)" />
+                  {{ col }}
+                </label>
+              </div>
+            </div>
+
+            <!-- Loading / error -->
+            <div v-if="ptMappingLoading || ptEquipmentLoading || ptDataLoading" style="color:var(--text-muted)">Loading power data...</div>
+            <div v-else-if="ptMappingError" class="result-box error" style="display:block">Mapping: {{ ptMappingError }}</div>
+            <div v-else-if="ptEquipmentError" class="result-box error" style="display:block">Equipment: {{ ptEquipmentError }}</div>
+            <div v-else-if="ptDataError" class="result-box error" style="display:block">{{ ptDataError }}</div>
+            <div v-else-if="powerRows.length === 0" class="empty-state">No EQL rows to display.</div>
+            <div v-else-if="filteredPowerRows.length === 0" class="empty-state">No rows match your search.</div>
+
+            <!-- Table -->
+            <div v-else style="overflow-x:auto">
+              <table class="sheets-table" style="margin-top:0">
+                <thead>
+                  <tr>
+                    <th style="min-width:60px">LIM</th>
+                    <th style="min-width:40px">O</th>
+                    <th style="min-width:50px">QTY</th>
+                    <th style="min-width:160px">NOMENCLATURE</th>
+                    <th style="min-width:130px">Rack</th>
+                    <th style="min-width:180px">Description</th>
+                    <th style="min-width:120px">Manufacturer</th>
+                    <th style="min-width:120px">Model</th>
+                    <th style="min-width:60px">Multiple</th>
+                    <th style="min-width:30px;text-align:right">#</th>
+                    <th v-for="col in visiblePowerCols" :key="col" style="white-space:nowrap">{{ col }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in filteredPowerRows"
+                    :key="row._rowKey"
+                    :class="{ 'pt-row-unmatched': !row._matched }"
+                  >
+                    <td>{{ row['LIM'] }}</td>
+                    <td>{{ row['O'] }}</td>
+                    <td style="text-align:right">{{ row['QTY'] }}</td>
+                    <td class="nomenclature-cell">
+                      <span v-if="!row._matched" class="icon" style="font-size:13px;vertical-align:middle;color:var(--error-text)" title="No equipment match">warning</span>
+                      {{ row['NOMENCLATURE'] }}
+                    </td>
+                    <td>
+                      <select
+                        :value="ptAssignments[row._rowKey] || ''"
+                        class="form-input"
+                        style="padding:2px 6px;font-size:12px;width:120px"
+                        @change="onRackAssignment(row._rowKey, $event.target.value)"
+                      >
+                        <option value="">— Unassigned —</option>
+                        <option v-for="rack in ptRacks" :key="rack" :value="rack">{{ rack }}</option>
+                      </select>
+                    </td>
+                    <td>{{ row['M.Description'] || '' }}</td>
+                    <td>{{ row['M.Manufacturer'] || '' }}</td>
+                    <td>{{ row['M.Model'] || '' }}</td>
+                    <td style="text-align:right">{{ row._multiple || '' }}</td>
+                    <td style="text-align:right;color:var(--text-muted);font-size:12px">{{ row._matched ? (row._instanceIdx + 1) : '' }}</td>
+                    <td v-for="col in visiblePowerCols" :key="col" style="white-space:nowrap">{{ row[col] !== undefined ? row[col] : '' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Rack totals -->
+            <template v-if="rackTotals.length && !ptMappingLoading && !ptEquipmentLoading && !ptDataLoading">
+              <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+                <div class="card-title" style="margin-bottom:10px;font-size:14px">Rack Totals <span style="font-size:12px;font-weight:400;color:var(--text-muted)">(sum of all individual unit instances)</span></div>
+                <div style="overflow-x:auto">
+                  <table class="sheets-table pt-totals-table" style="margin-top:0">
+                    <thead>
+                      <tr>
+                        <th>Rack</th>
+                        <th style="text-align:right">Rows</th>
+                        <th style="text-align:right">Watts max</th>
+                        <th style="text-align:right">AC amps max</th>
+                        <th style="text-align:right">VA max</th>
+                        <th style="text-align:right">BTU max</th>
+                        <th style="text-align:right">Weight (LBs)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in rackTotals" :key="r.rack" :class="{ 'pt-totals-unassigned': r.rack === 'Unassigned' }">
+                        <td style="font-weight:500">{{ r.rack }}</td>
+                        <td style="text-align:right">{{ r.count }}</td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace">{{ formatNum(r.watts) }}</td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace">{{ formatNum(r.amps) }}</td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace">{{ formatNum(r.va) }}</td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace">{{ formatNum(r.btu) }}</td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace">{{ formatNum(r.weight) }}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr class="pt-totals-footer">
+                        <td><strong>Total</strong></td>
+                        <td style="text-align:right"><strong>{{ rackTotals.reduce(function(s,r){return s+r.count;},0) }}</strong></td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace"><strong>{{ formatNum(rackTotals.reduce(function(s,r){return s+r.watts;},0)) }}</strong></td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace"><strong>{{ formatNum(rackTotals.reduce(function(s,r){return s+r.amps;},0)) }}</strong></td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace"><strong>{{ formatNum(rackTotals.reduce(function(s,r){return s+r.va;},0)) }}</strong></td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace"><strong>{{ formatNum(rackTotals.reduce(function(s,r){return s+r.btu;},0)) }}</strong></td>
+                        <td style="text-align:right;font-family:'Roboto Mono',monospace"><strong>{{ formatNum(rackTotals.reduce(function(s,r){return s+r.weight;},0)) }}</strong></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </template>
     </template>
 
     <!-- Context menu — position: fixed so it renders outside the table's overflow:auto scroll container -->
@@ -264,10 +685,35 @@
 </template>
 
 <script>
+import Papa from 'papaparse';
+
 var PAGE_SIZE = 100;
-var KEY_COLUMNS = ['OPT','COF','DS','CUST REF','ORGANIZER 1','ORGANIZER 2','SUB SYS ID','ORGANIZER 3','ORGANIZER 4','LIST ID','LIM','O','APC','QTY','NOMENCLATURE','DESCRIPTION','UNIT LIST','EXT LIST','TOTAL QTY','EXT EXCHANGE RATE','EXT STAGING','EXT FIELD','EXT DROPSHIP','CUSTOMER DISCOUNT (%)','UNIT CUSTOMER DISCOUNT','EXT CUSTOMER DISCOUNT','FAMILY GROUP','PRODUCT STATUS','PRODUCT STATUS REFRESH DATE','CFG','LOCATION','OPTIONAL','ORGANIZER 5','ORGANIZER 6','ORGANIZER 7','ORGANIZER 8','EID','PID','TERM','CURRENCY','DESIGN QUOTE','REPORT RUN DATE','SORT ORDER','COUNTRY OF ORIGIN','PARAMETRIC DATA'];
-var HIDDEN_COLUMNS = ['_uid'];
-var PRICE_COLUMN = 'EXT LIST';
+
+// ── Power Table constants (v2) ─────────────────────────────────────────────
+// Equipment table columns — toggleable in the column picker (25 cols)
+var EQUIPMENT_COLUMNS = [
+  'SubSys', 'Nomenclature', 'Description', 'Profile',
+  'Manufacturer', 'Model', 'PSU',
+  'AC volts min', 'AC volts max', 'AC amps max',
+  'DC volts', 'DC amps max',
+  'Watts max', 'VA max', 'BTU max',
+  'H (in)', 'W (in)', 'D (in)', 'Weight (LBs)',
+  'Operating Temp °F (min)', 'Operating Temp °F (max)',
+  'Storage Temp °F (min)', 'Storage Temp °F (max)',
+  'RU', 'Spec Sheet'
+];
+// Mapping columns always shown (not toggleable)
+var MAPPING_DISPLAY_COLUMNS = ['Description', 'Manufacturer', 'Model'];
+// Columns summed in rack totals (1 unit per row — row expansion handles the multiplication)
+var PT_TOTAL_COLUMNS = ['Watts max', 'BTU max', 'Weight (LBs)', 'AC amps max', 'VA max'];
+// localStorage key — v2 to avoid conflict with v1 prefs
+var LS_PT_COL_KEY = 'power-table-cols-v2';
+
+// Fallback defaults — used until getColumnConfig() returns from the server
+var DEFAULT_KEY_COLUMNS = ['OPT','COF','DS','CUST REF','ORGANIZER 1','ORGANIZER 2','SUB SYS ID','ORGANIZER 3','ORGANIZER 4','LIST ID','LIM','O','APC','QTY','NOMENCLATURE','DESCRIPTION','UNIT LIST','EXT LIST','TOTAL QTY','EXT EXCHANGE RATE','EXT STAGING','EXT FIELD','EXT DROPSHIP','CUSTOMER DISCOUNT (%)','UNIT CUSTOMER DISCOUNT','EXT CUSTOMER DISCOUNT','FAMILY GROUP','PRODUCT STATUS','PRODUCT STATUS REFRESH DATE','CFG','LOCATION','OPTIONAL','ORGANIZER 5','ORGANIZER 6','ORGANIZER 7','ORGANIZER 8','EID','PID','TERM','CURRENCY','DESIGN QUOTE','REPORT RUN DATE','SORT ORDER','COUNTRY OF ORIGIN','PARAMETRIC DATA'];
+var DEFAULT_HIDDEN_COLUMNS = ['_uid'];
+var DEFAULT_PRICE_COLUMN = 'EXT LIST';
+var DEFAULT_MAIN_LINE_ITEM = { limColumn: 'LIM', optColumn: 'O' };
 
 // Generate an 8-char uppercase hex UID — matches the server-side generateUid_() format
 function clientUid() {
@@ -294,6 +740,14 @@ export default {
 
       // Context menu state
       contextMenu: { visible: false, x: 0, y: 0, row: null, rowType: null },
+
+      // Column configuration (loaded from server; defaults until then)
+      columnConfig: {
+        keyColumns: DEFAULT_KEY_COLUMNS,
+        hiddenColumns: DEFAULT_HIDDEN_COLUMNS,
+        priceColumn: DEFAULT_PRICE_COLUMN,
+        mainLineItem: DEFAULT_MAIN_LINE_ITEM
+      },
 
       // Project meta
       project: null,
@@ -326,6 +780,73 @@ export default {
       metadataEdits: {},
       loadingMetadata: false,
       metadataError: '',
+
+      // Catalog version picker
+      catalogs: [],
+      baselineCatalogId: null,
+      modificationCatalogId: null,
+      catalogSaving: false,
+
+      // ── Power Table tab (v2) ─────────────────────────────────────────────
+
+      // Tab control
+      activeTab: 'equipment-list',
+
+      // ── Mapping table management
+      ptMappingTableList: [],
+      ptMappingTableLoading: false,
+      ptMappingTableError: '',
+      ptMappingTableId: null,        // active mapping version ID
+      ptMappingMap: {},              // { 'LIM|O': [mappingRow, ...] }
+      ptMappingLoading: false,
+      ptMappingError: '',
+      ptShowMappingSelector: false,
+      ptMappingUploadForm: { name: '', version: '', file: null },
+      ptMappingParsedRows: [],
+      ptMappingParsedCols: [],
+      ptMappingParseError: '',
+      ptMappingUploading: false,
+      ptMappingUploadError: '',
+      ptMappingDeleteTarget: null,
+      ptMappingDeleting: false,
+      ptMappingDeleteError: '',
+
+      // ── Equipment table management
+      ptEquipmentTableList: [],
+      ptEquipmentTableLoading: false,
+      ptEquipmentTableError: '',
+      ptEquipmentTableId: null,      // active equipment version ID
+      ptEquipmentMap: {},            // { 'Manufacturer|Model': equipmentRow }
+      ptEquipmentLoading: false,
+      ptEquipmentError: '',
+      ptShowEquipmentSelector: false,
+      ptEquipmentUploadForm: { name: '', version: '', file: null },
+      ptEquipmentParsedRows: [],
+      ptEquipmentParsedCols: [],
+      ptEquipmentParseError: '',
+      ptEquipmentUploading: false,
+      ptEquipmentUploadError: '',
+      ptEquipmentDeleteTarget: null,
+      ptEquipmentDeleting: false,
+      ptEquipmentDeleteError: '',
+
+      // ── Per-project state
+      ptRacks: [],               // [string] — user-defined rack names
+      ptAssignments: {},         // { "eqlUid|mappingIdx|instanceIdx": rackName } — per expanded row instance
+      ptNewRack: '',
+      ptDataLoading: false,
+      ptDataError: '',
+      ptSaving: false,
+      ptSaveError: '',
+      ptSaveTimer: null,
+      ptLoaded: false,
+
+      // ── Column visibility (Equipment columns, all on by default)
+      ptVisibleCols: {},
+      ptShowColPicker: false,
+
+      // ── Search
+      ptSearch: '',
     };
   },
 
@@ -357,7 +878,7 @@ export default {
     finalTotal()    { return this.sumPrice(this.finalRows); },
     priceDelta()    { return this.finalTotal - this.baselineTotal; },
     hasPriceColumn() {
-      return this.eqlRows.length > 0 && PRICE_COLUMN in this.eqlRows[0];
+      return this.eqlRows.length > 0 && this.columnConfig.priceColumn in this.eqlRows[0];
     },
 
     // ADL 'add' entries shaped as pseudo-EQL rows — used by finalRows, Final List count,
@@ -463,8 +984,10 @@ export default {
     eqlDisplayColumns() {
       if (!this.eqlRows.length) return [];
       var keys = Object.keys(this.eqlRows[0]);
-      var ordered = KEY_COLUMNS.filter(function(c) { return keys.indexOf(c) !== -1; });
-      var rest = keys.filter(function(c) { return KEY_COLUMNS.indexOf(c) === -1 && HIDDEN_COLUMNS.indexOf(c) === -1; });
+      var keyColumns = this.columnConfig.keyColumns;
+      var hiddenColumns = this.columnConfig.hiddenColumns;
+      var ordered = keyColumns.filter(function(c) { return keys.indexOf(c) !== -1; });
+      var rest = keys.filter(function(c) { return keyColumns.indexOf(c) === -1 && hiddenColumns.indexOf(c) === -1; });
       return ordered.concat(rest);
     },
 
@@ -486,16 +1009,174 @@ export default {
       }
       return result.sort();
     },
+
+    // ── Power Table computed (v2) ────────────────────────────────────────
+
+    // All Equipment columns — used by the column picker
+    ptAllColumns() {
+      return EQUIPMENT_COLUMNS;
+    },
+
+    ptMappingActiveLabel() {
+      for (var i = 0; i < this.ptMappingTableList.length; i++) {
+        var t = this.ptMappingTableList[i];
+        if (t.id === this.ptMappingTableId) return t.name + ' v' + t.version;
+      }
+      return '';
+    },
+
+    ptEquipmentActiveLabel() {
+      for (var i = 0; i < this.ptEquipmentTableList.length; i++) {
+        var t = this.ptEquipmentTableList[i];
+        if (t.id === this.ptEquipmentTableId) return t.name + ' v' + t.version;
+      }
+      return '';
+    },
+
+    // Expand EQL rows into individual unit instances via Mapping → Equipment join.
+    // Each expanded row represents one physical unit:
+    //   instance count per mapping entry = Math.round(EQL.QTY × Mapping.Multiple)
+    // Each instance gets its own rack assignment keyed by _rowKey = "eqlUid|mappingIdx|instanceIdx".
+    powerRows() {
+      var mappingMap = this.ptMappingMap;
+      var eqMap = this.ptEquipmentMap;
+      var assignments = this.ptAssignments;
+      var result = [];
+
+      for (var i = 0; i < this.eqlRows.length; i++) {
+        var eql = this.eqlRows[i];
+        var limKey = (eql['LIM'] || '') + '|' + (eql['O'] || '');
+        var qty = parseFloat(eql['QTY']) || 1;
+        var mappings = mappingMap[limKey];
+
+        if (!mappings || !mappings.length) {
+          // No mapping match — one unmatched placeholder row (no rack assignment)
+          result.push({
+            _eqlUid: eql._uid,
+            _rowKey: eql._uid + '|unmatched',
+            _matched: false,
+            _rack: '',
+            _qty: qty,
+            _multiple: 0,
+            _effectiveQty: 0,
+            _instanceIdx: 0,
+            LIM: eql['LIM'],
+            O: eql['O'],
+            QTY: eql['QTY'],
+            NOMENCLATURE: eql['NOMENCLATURE']
+          });
+          continue;
+        }
+
+        for (var j = 0; j < mappings.length; j++) {
+          var m = mappings[j];
+          var eqKey = (m['Manufacturer'] || '') + '|' + (m['Model'] || '');
+          var eq = eqMap[eqKey] || null;
+          var multiple = parseFloat(m['Multiple']);
+          if (isNaN(multiple)) multiple = 1;
+          // Each instance = 1 physical unit. Multiple=0 → no instances for this mapping row.
+          var effectiveQty = Math.max(0, Math.round(qty * multiple));
+          if (effectiveQty === 0) continue;
+
+          for (var inst = 0; inst < effectiveQty; inst++) {
+            var rowKey = eql._uid + '|' + j + '|' + inst;
+            var expanded = {
+              _eqlUid: eql._uid,
+              _rowKey: rowKey,
+              _matched: !!eq,
+              _rack: assignments[rowKey] || '',
+              _qty: qty,
+              _multiple: multiple,
+              _effectiveQty: effectiveQty,
+              _instanceIdx: inst,
+              LIM: eql['LIM'],
+              O: eql['O'],
+              QTY: eql['QTY'],
+              NOMENCLATURE: eql['NOMENCLATURE'],
+              'M.Description':  m['Description']  || '',
+              'M.Manufacturer': m['Manufacturer'] || '',
+              'M.Model':        m['Model']        || '',
+              'M.Multiple':     m['Multiple']     || ''
+            };
+            // Merge all equipment columns for matched rows
+            if (eq) {
+              for (var k = 0; k < EQUIPMENT_COLUMNS.length; k++) {
+                var col = EQUIPMENT_COLUMNS[k];
+                if (eq[col] !== undefined) expanded[col] = eq[col];
+              }
+            }
+            result.push(expanded);
+          }
+        }
+      }
+      return result;
+    },
+
+    filteredPowerRows() {
+      if (!this.ptSearch.trim()) return this.powerRows;
+      var q = this.ptSearch.trim().toLowerCase();
+      return this.powerRows.filter(function(row) {
+        var searchFields = ['NOMENCLATURE', 'LIM', 'O', 'M.Description', 'M.Manufacturer', 'M.Model'];
+        for (var s = 0; s < searchFields.length; s++) {
+          if ((row[searchFields[s]] || '').toLowerCase().indexOf(q) !== -1) return true;
+        }
+        for (var c = 0; c < EQUIPMENT_COLUMNS.length; c++) {
+          var val = row[EQUIPMENT_COLUMNS[c]];
+          if (val != null && String(val).toLowerCase().indexOf(q) !== -1) return true;
+        }
+        return false;
+      });
+    },
+
+    visiblePowerCols() {
+      var vis = this.ptVisibleCols;
+      return EQUIPMENT_COLUMNS.filter(function(c) { return vis[c] !== false; });
+    },
+
+    ptUnmatchedCount() {
+      var count = 0;
+      var rows = this.powerRows;
+      for (var i = 0; i < rows.length; i++) { if (!rows[i]._matched) count++; }
+      return count;
+    },
+
+    // Totals per rack — each row is 1 physical unit; row expansion handles QTY × Multiple
+    rackTotals() {
+      var buckets = {};
+      var rows = this.filteredPowerRows;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var rack = r._rack || 'Unassigned';
+        if (!buckets[rack]) buckets[rack] = { rack: rack, count: 0, watts: 0, amps: 0, va: 0, btu: 0, weight: 0 };
+        var b = buckets[rack];
+        // Each row is one physical unit — sum raw spec values directly
+        b.count++;
+        b.watts  += parseFloat(r['Watts max'])     || 0;
+        b.amps   += parseFloat(r['AC amps max'])   || 0;
+        b.va     += parseFloat(r['VA max'])        || 0;
+        b.btu    += parseFloat(r['BTU max'])       || 0;
+        b.weight += parseFloat(r['Weight (LBs)'])  || 0;
+      }
+      var result = Object.values(buckets);
+      result.sort(function(a, b) {
+        if (a.rack === 'Unassigned') return 1;
+        if (b.rack === 'Unassigned') return -1;
+        return a.rack < b.rack ? -1 : a.rack > b.rack ? 1 : 0;
+      });
+      return result;
+    },
   },
 
   watch: {
     projectId: {
       immediate: true,
       handler() {
+        this.loadColumnConfig();
         this.loadProject();
         this.loadEql();
         this.loadAdl();
         this.loadMetadata();
+        this.loadCatalogs();
       },
     },
 
@@ -532,6 +1213,7 @@ export default {
     document.removeEventListener('keydown',   this._onDocKeydown);
     var contentEl = document.querySelector('.content');
     if (contentEl) contentEl.removeEventListener('scroll', this._onContentScroll);
+    if (this.ptSaveTimer) clearTimeout(this.ptSaveTimer);
   },
 
   methods: {
@@ -545,11 +1227,24 @@ export default {
       this.$emit('navigate', 'projects');
     },
 
+    loadColumnConfig() {
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(config) { self.columnConfig = config; })
+        .withFailureHandler(function() { /* keep defaults */ })
+        .getColumnConfig();
+    },
+
     loadProject() {
       this.loadingProject = true;
       var self = this;
       google.script.run
-        .withSuccessHandler(function(data) { self.project = data; self.loadingProject = false; })
+        .withSuccessHandler(function(data) {
+          self.project = data;
+          self.baselineCatalogId = (data && data.baselineCatalogId) || null;
+          self.modificationCatalogId = (data && data.modificationCatalogId) || null;
+          self.loadingProject = false;
+        })
         .withFailureHandler(function(err) { self.projectError = err.message || String(err); self.loadingProject = false; })
         .getProject(this.projectId);
     },
@@ -606,6 +1301,34 @@ export default {
         .getAdl(this.projectId);
     },
 
+    loadCatalogs() {
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(data) { self.catalogs = data || []; })
+        .withFailureHandler(function() { /* silently use empty list */ })
+        .listCatalogs();
+    },
+
+    saveCatalogSelection(field, catalogId) {
+      this.catalogSaving = true;
+      var updates = {
+        customer: this.project.customer,
+        projectName: this.project.projectName,
+        description: this.project.description || ''
+      };
+      updates[field] = catalogId || null;
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(updated) {
+          self.project = updated;
+          self.catalogSaving = false;
+        })
+        .withFailureHandler(function() {
+          self.catalogSaving = false;
+        })
+        .updateProject(this.projectId, updates);
+    },
+
     loadMetadata() {
       this.loadingMetadata = true;
       var self = this;
@@ -657,12 +1380,14 @@ export default {
     },
 
     isMainLineItem(row) {
-      return row['LIM'] && !row['O'];
+      return row[this.columnConfig.mainLineItem.limColumn] && !row[this.columnConfig.mainLineItem.optColumn];
     },
 
     getSubLineItems(mainRow) {
-      var lim = mainRow['LIM'];
-      return this.eqlRows.filter(function(r) { return r['LIM'] === lim && r['O']; });
+      var limCol = this.columnConfig.mainLineItem.limColumn;
+      var optCol = this.columnConfig.mainLineItem.optColumn;
+      var lim = mainRow[limCol];
+      return this.eqlRows.filter(function(r) { return r[limCol] === lim && r[optCol]; });
     },
 
     // Delete a row (in memory — no network call); cascades to sub line items for main items
@@ -673,7 +1398,7 @@ export default {
         var self = this;
         this.getSubLineItems(row).forEach(function(sub) {
           if (!self.deletedUids[sub._uid]) {
-            entries.push({ action: 'delete', nomenclature: sub['NOMENCLATURE'], targetUid: sub._uid, notes: 'Cascade: main LIM ' + row['LIM'] + ' deleted' });
+            entries.push({ action: 'delete', nomenclature: sub['NOMENCLATURE'], targetUid: sub._uid, notes: 'Cascade: main ' + self.columnConfig.mainLineItem.limColumn + ' ' + row[self.columnConfig.mainLineItem.limColumn] + ' deleted' });
           }
         });
       }
@@ -700,9 +1425,11 @@ export default {
           if (this.eqlRows[j]._uid === entry.targetUid) { mainRow = this.eqlRows[j]; break; }
         }
         if (mainRow && this.isMainLineItem(mainRow)) {
-          var lim = mainRow['LIM'];
+          var limCol = this.columnConfig.mainLineItem.limColumn;
+          var optCol = this.columnConfig.mainLineItem.optColumn;
+          var lim = mainRow[limCol];
           var subUids = {};
-          this.eqlRows.forEach(function(r) { if (r['LIM'] === lim && r['O']) subUids[r._uid] = true; });
+          this.eqlRows.forEach(function(r) { if (r[limCol] === lim && r[optCol]) subUids[r._uid] = true; });
           this.adl.forEach(function(e) {
             if (e.action === 'delete' && e.targetUid && subUids[e.targetUid]) uidsToRemove.push(e.uid);
           });
@@ -821,9 +1548,10 @@ export default {
     // ── Utilities ───────────────────────────────────────────────────────────
 
     sumPrice(rows) {
+      var col = this.columnConfig.priceColumn;
       var total = 0;
       for (var i = 0; i < rows.length; i++) {
-        var val = parseFloat(rows[i][PRICE_COLUMN]);
+        var val = parseFloat(rows[i][col]);
         if (!isNaN(val)) total += val;
       }
       return total;
@@ -831,6 +1559,437 @@ export default {
 
     formatCurrency(num) {
       return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    },
+
+    formatDate(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    },
+
+    formatNum(val) {
+      if (val == null || isNaN(val)) return '—';
+      return val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    },
+
+    // ── Power Table methods (v2) ─────────────────────────────────────────
+
+    // Called when user clicks the Power Table tab — loads on first activation only
+    switchToPowerTab() {
+      this.activeTab = 'power-table';
+      if (!this.ptLoaded) {
+        this.ptInitColVisibility();
+        this.loadPtMappingTableList();
+        this.loadPtEquipmentTableList();
+        this.loadPowerTableData();
+      }
+    },
+
+    // ── Column visibility ────────────────────────────────────────────────────
+
+    ptInitColVisibility() {
+      var stored = null;
+      try { stored = JSON.parse(localStorage.getItem(LS_PT_COL_KEY)); } catch (e) { /* ignore */ }
+      var vis = {};
+      for (var i = 0; i < EQUIPMENT_COLUMNS.length; i++) {
+        var col = EQUIPMENT_COLUMNS[i];
+        vis[col] = stored && stored[col] === false ? false : true;
+      }
+      this.ptVisibleCols = vis;
+    },
+
+    togglePtCol(col, checked) {
+      this.ptVisibleCols = Object.assign({}, this.ptVisibleCols, { [col]: checked });
+      try { localStorage.setItem(LS_PT_COL_KEY, JSON.stringify(this.ptVisibleCols)); } catch (e) { /* ignore */ }
+    },
+
+    resetPtCols() {
+      var vis = {};
+      for (var i = 0; i < EQUIPMENT_COLUMNS.length; i++) { vis[EQUIPMENT_COLUMNS[i]] = true; }
+      this.ptVisibleCols = vis;
+      try { localStorage.removeItem(LS_PT_COL_KEY); } catch (e) { /* ignore */ }
+    },
+
+    // ── Mapping table ────────────────────────────────────────────────────────
+
+    loadPtMappingTableList() {
+      this.ptMappingTableLoading = true;
+      this.ptMappingTableError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(list) {
+          self.ptMappingTableList = list || [];
+          self.ptMappingTableLoading = false;
+        })
+        .withFailureHandler(function(err) {
+          self.ptMappingTableError = err.message || String(err);
+          self.ptMappingTableLoading = false;
+        })
+        .listPowerMappingTables();
+    },
+
+    loadPowerMapping(tableId) {
+      this.ptMappingLoading = true;
+      this.ptMappingError = '';
+      this.ptMappingMap = {};
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(rows) {
+          var map = {};
+          if (rows) {
+            for (var i = 0; i < rows.length; i++) {
+              var r = rows[i];
+              var key = (r['LIM'] || '') + '|' + (r['O'] || '');
+              if (!map[key]) map[key] = [];
+              map[key].push(r);
+            }
+          }
+          self.ptMappingMap = map;
+          self.ptMappingLoading = false;
+        })
+        .withFailureHandler(function(err) {
+          self.ptMappingError = err.message || String(err);
+          self.ptMappingLoading = false;
+        })
+        .getPowerMapping(tableId);
+    },
+
+    ptSelectMappingTable(tableId) {
+      this.ptMappingTableId = tableId;
+      this.ptShowMappingSelector = false;
+      this.loadPowerMapping(tableId);
+      this.schedulePtSave();
+    },
+
+    ptMappingOnFileSelected(event) {
+      this.ptMappingUploadForm.file = event.target.files[0] || null;
+      this.ptMappingParsedRows = [];
+      this.ptMappingParsedCols = [];
+      this.ptMappingParseError = '';
+      this.ptMappingUploadError = '';
+    },
+
+    ptMappingParseFile() {
+      if (!this.ptMappingUploadForm.file) return;
+      var self = this;
+      this.ptMappingParseError = '';
+      Papa.parse(this.ptMappingUploadForm.file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          if (results.errors.length > 0) {
+            self.ptMappingParseError = 'CSV parse error: ' + results.errors[0].message;
+            return;
+          }
+          if (!results.data || results.data.length === 0) {
+            self.ptMappingParseError = 'No data rows found in this CSV.';
+            return;
+          }
+          var cols = results.meta.fields || Object.keys(results.data[0]);
+          var required = ['LIM', 'O', 'Manufacturer', 'Model'];
+          for (var i = 0; i < required.length; i++) {
+            if (cols.indexOf(required[i]) === -1) {
+              self.ptMappingParseError = 'CSV must have a "' + required[i] + '" column.';
+              return;
+            }
+          }
+          self.ptMappingParsedCols = cols;
+          self.ptMappingParsedRows = results.data;
+        },
+        error: function(err) {
+          self.ptMappingParseError = 'Could not parse file: ' + (err.message || String(err));
+        },
+      });
+    },
+
+    ptMappingUploadTable() {
+      if (!this.ptMappingUploadForm.name.trim() || !this.ptMappingUploadForm.version.trim() || !this.ptMappingParsedRows.length) return;
+      var payloadSize = JSON.stringify(this.ptMappingParsedRows).length;
+      if (payloadSize > 8 * 1024 * 1024) {
+        this.ptMappingUploadError = 'Table is too large (' + Math.round(payloadSize / 1024 / 1024) + ' MB). Maximum is ~8 MB.';
+        return;
+      }
+      this.ptMappingUploading = true;
+      this.ptMappingUploadError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          self.ptMappingUploading = false;
+          self.ptMappingParsedRows = [];
+          self.ptMappingParsedCols = [];
+          self.ptMappingUploadForm = { name: '', version: '', file: null };
+          if (self.$refs.ptMappingFileInput) self.$refs.ptMappingFileInput.value = '';
+          self.loadPtMappingTableList();
+          self.ptSelectMappingTable(result.id);
+        })
+        .withFailureHandler(function(err) {
+          self.ptMappingUploadError = err.message || String(err);
+          self.ptMappingUploading = false;
+        })
+        .createPowerMappingTable(this.ptMappingUploadForm.name.trim(), this.ptMappingUploadForm.version.trim(), this.ptMappingParsedRows);
+    },
+
+    ptMappingConfirmDelete(tbl) {
+      this.ptMappingDeleteTarget = tbl;
+      this.ptMappingDeleteError = '';
+    },
+
+    ptMappingDoDelete() {
+      if (!this.ptMappingDeleteTarget) return;
+      this.ptMappingDeleting = true;
+      this.ptMappingDeleteError = '';
+      var self = this;
+      var id = this.ptMappingDeleteTarget.id;
+      google.script.run
+        .withSuccessHandler(function() {
+          self.ptMappingDeleting = false;
+          self.ptMappingDeleteTarget = null;
+          if (self.ptMappingTableId === id) {
+            self.ptMappingTableId = null;
+            self.ptMappingMap = {};
+            self.schedulePtSave();
+          }
+          self.loadPtMappingTableList();
+        })
+        .withFailureHandler(function(err) {
+          self.ptMappingDeleteError = err.message || String(err);
+          self.ptMappingDeleting = false;
+        })
+        .deletePowerMappingTable(id);
+    },
+
+    // ── Equipment table ──────────────────────────────────────────────────────
+
+    loadPtEquipmentTableList() {
+      this.ptEquipmentTableLoading = true;
+      this.ptEquipmentTableError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(list) {
+          self.ptEquipmentTableList = list || [];
+          self.ptEquipmentTableLoading = false;
+        })
+        .withFailureHandler(function(err) {
+          self.ptEquipmentTableError = err.message || String(err);
+          self.ptEquipmentTableLoading = false;
+        })
+        .listPowerEquipmentTables();
+    },
+
+    loadPowerEquipment(tableId) {
+      this.ptEquipmentLoading = true;
+      this.ptEquipmentError = '';
+      this.ptEquipmentMap = {};
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(rows) {
+          var map = {};
+          if (rows) {
+            for (var i = 0; i < rows.length; i++) {
+              var r = rows[i];
+              var key = (r['Manufacturer'] || '') + '|' + (r['Model'] || '');
+              map[key] = r;
+            }
+          }
+          self.ptEquipmentMap = map;
+          self.ptEquipmentLoading = false;
+        })
+        .withFailureHandler(function(err) {
+          self.ptEquipmentError = err.message || String(err);
+          self.ptEquipmentLoading = false;
+        })
+        .getPowerEquipment(tableId);
+    },
+
+    ptSelectEquipmentTable(tableId) {
+      this.ptEquipmentTableId = tableId;
+      this.ptShowEquipmentSelector = false;
+      this.loadPowerEquipment(tableId);
+      this.schedulePtSave();
+    },
+
+    ptEquipmentOnFileSelected(event) {
+      this.ptEquipmentUploadForm.file = event.target.files[0] || null;
+      this.ptEquipmentParsedRows = [];
+      this.ptEquipmentParsedCols = [];
+      this.ptEquipmentParseError = '';
+      this.ptEquipmentUploadError = '';
+    },
+
+    ptEquipmentParseFile() {
+      if (!this.ptEquipmentUploadForm.file) return;
+      var self = this;
+      this.ptEquipmentParseError = '';
+      Papa.parse(this.ptEquipmentUploadForm.file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          if (results.errors.length > 0) {
+            self.ptEquipmentParseError = 'CSV parse error: ' + results.errors[0].message;
+            return;
+          }
+          if (!results.data || results.data.length === 0) {
+            self.ptEquipmentParseError = 'No data rows found in this CSV.';
+            return;
+          }
+          var cols = results.meta.fields || Object.keys(results.data[0]);
+          var required = ['Manufacturer', 'Model'];
+          for (var i = 0; i < required.length; i++) {
+            if (cols.indexOf(required[i]) === -1) {
+              self.ptEquipmentParseError = 'CSV must have a "' + required[i] + '" column.';
+              return;
+            }
+          }
+          self.ptEquipmentParsedCols = cols;
+          self.ptEquipmentParsedRows = results.data;
+        },
+        error: function(err) {
+          self.ptEquipmentParseError = 'Could not parse file: ' + (err.message || String(err));
+        },
+      });
+    },
+
+    ptEquipmentUploadTable() {
+      if (!this.ptEquipmentUploadForm.name.trim() || !this.ptEquipmentUploadForm.version.trim() || !this.ptEquipmentParsedRows.length) return;
+      var payloadSize = JSON.stringify(this.ptEquipmentParsedRows).length;
+      if (payloadSize > 8 * 1024 * 1024) {
+        this.ptEquipmentUploadError = 'Table is too large (' + Math.round(payloadSize / 1024 / 1024) + ' MB). Maximum is ~8 MB.';
+        return;
+      }
+      this.ptEquipmentUploading = true;
+      this.ptEquipmentUploadError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          self.ptEquipmentUploading = false;
+          self.ptEquipmentParsedRows = [];
+          self.ptEquipmentParsedCols = [];
+          self.ptEquipmentUploadForm = { name: '', version: '', file: null };
+          if (self.$refs.ptEquipmentFileInput) self.$refs.ptEquipmentFileInput.value = '';
+          self.loadPtEquipmentTableList();
+          self.ptSelectEquipmentTable(result.id);
+        })
+        .withFailureHandler(function(err) {
+          self.ptEquipmentUploadError = err.message || String(err);
+          self.ptEquipmentUploading = false;
+        })
+        .createPowerEquipmentTable(this.ptEquipmentUploadForm.name.trim(), this.ptEquipmentUploadForm.version.trim(), this.ptEquipmentParsedRows);
+    },
+
+    ptEquipmentConfirmDelete(tbl) {
+      this.ptEquipmentDeleteTarget = tbl;
+      this.ptEquipmentDeleteError = '';
+    },
+
+    ptEquipmentDoDelete() {
+      if (!this.ptEquipmentDeleteTarget) return;
+      this.ptEquipmentDeleting = true;
+      this.ptEquipmentDeleteError = '';
+      var self = this;
+      var id = this.ptEquipmentDeleteTarget.id;
+      google.script.run
+        .withSuccessHandler(function() {
+          self.ptEquipmentDeleting = false;
+          self.ptEquipmentDeleteTarget = null;
+          if (self.ptEquipmentTableId === id) {
+            self.ptEquipmentTableId = null;
+            self.ptEquipmentMap = {};
+            self.schedulePtSave();
+          }
+          self.loadPtEquipmentTableList();
+        })
+        .withFailureHandler(function(err) {
+          self.ptEquipmentDeleteError = err.message || String(err);
+          self.ptEquipmentDeleting = false;
+        })
+        .deletePowerEquipmentTable(id);
+    },
+
+    // ── Project data (racks + assignments) ───────────────────────────────────
+
+    loadPowerTableData() {
+      this.ptDataLoading = true;
+      this.ptDataError = '';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(data) {
+          self.ptRacks = (data && data.racks) || [];
+          self.ptAssignments = (data && data.rackAssignments) || {};
+          var mappingId = (data && data.activeMappingTableId) || null;
+          var equipmentId = (data && data.activeEquipmentTableId) || null;
+          self.ptMappingTableId = mappingId;
+          self.ptEquipmentTableId = equipmentId;
+          self.ptDataLoading = false;
+          self.ptLoaded = true;
+          if (mappingId) self.loadPowerMapping(mappingId);
+          if (equipmentId) self.loadPowerEquipment(equipmentId);
+        })
+        .withFailureHandler(function(err) {
+          self.ptDataError = err.message || String(err);
+          self.ptDataLoading = false;
+          self.ptLoaded = true;
+        })
+        .getPowerTableData(this.projectId);
+    },
+
+    // ── Racks ────────────────────────────────────────────────────────────────
+
+    addRack() {
+      var name = this.ptNewRack.trim();
+      if (!name || this.ptRacks.indexOf(name) !== -1) return;
+      this.ptRacks = this.ptRacks.concat([name]);
+      this.ptNewRack = '';
+      this.schedulePtSave();
+    },
+
+    removeRack(rackName) {
+      this.ptRacks = this.ptRacks.filter(function(r) { return r !== rackName; });
+      var assignments = Object.assign({}, this.ptAssignments);
+      Object.keys(assignments).forEach(function(uid) {
+        if (assignments[uid] === rackName) delete assignments[uid];
+      });
+      this.ptAssignments = assignments;
+      this.schedulePtSave();
+    },
+
+    onRackAssignment(uid, rackName) {
+      var assignments = Object.assign({}, this.ptAssignments);
+      if (rackName) {
+        assignments[uid] = rackName;
+      } else {
+        delete assignments[uid];
+      }
+      this.ptAssignments = assignments;
+      this.schedulePtSave();
+    },
+
+    // ── Save ─────────────────────────────────────────────────────────────────
+
+    schedulePtSave() {
+      if (this.ptSaveTimer) clearTimeout(this.ptSaveTimer);
+      var self = this;
+      this.ptSaveTimer = setTimeout(function() { self.executePtSave(); }, 800);
+    },
+
+    executePtSave() {
+      this.ptSaving = true;
+      this.ptSaveError = '';
+      var self = this;
+      var payload = {
+        activeMappingTableId: this.ptMappingTableId,
+        activeEquipmentTableId: this.ptEquipmentTableId,
+        racks: this.ptRacks,
+        rackAssignments: this.ptAssignments
+      };
+      google.script.run
+        .withSuccessHandler(function() {
+          self.ptSaving = false;
+        })
+        .withFailureHandler(function(err) {
+          self.ptSaveError = err.message || String(err);
+          self.ptSaving = false;
+        })
+        .savePowerTableData(this.projectId, payload);
     },
 
   },
