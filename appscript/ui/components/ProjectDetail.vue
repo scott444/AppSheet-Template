@@ -149,11 +149,11 @@
         </div>
 
         <!-- Inline add form — v-show preserves input state when toggled -->
-        <div v-if="viewMode === 'modifications'" v-show="showAddForm" style="background:var(--bg);border-radius:6px;padding:16px;margin-bottom:12px">
+        <div v-if="viewMode === 'modifications'" v-show="showAddForm" ref="addFormEl" style="background:var(--bg);border-radius:6px;padding:16px;margin-bottom:12px">
           <!-- Anchor hint — shown when form was opened via Insert Above / Insert Below -->
           <div v-if="insertAnchor" style="font-size:12px;color:var(--primary);margin-bottom:10px;padding:6px 10px;background:var(--primary-light);border-radius:4px;border-left:3px solid var(--primary)">
-            <span class="icon" style="font-size:14px;vertical-align:middle">{{ insertAnchor.position === 'above' ? 'vertical_align_top' : 'vertical_align_bottom' }}</span>
-            Inserting {{ insertAnchor.position }} <strong>{{ anchorNomenclature }}</strong>
+            <span class="icon" style="font-size:14px;vertical-align:middle">{{ (insertAnchor.selectedPosition || insertAnchor.position) === 'above' ? 'vertical_align_top' : 'vertical_align_bottom' }}</span>
+            Inserting {{ insertAnchor.selectedPosition || insertAnchor.position }} <strong>{{ anchorNomenclature }}</strong>
           </div>
           <div class="form-group">
             <label class="form-label">Nomenclature</label>
@@ -998,10 +998,13 @@ export default {
       return this.interleaveEqlWithAdds(false);
     },
 
-    // Nomenclature label for the insert anchor hint in the add form
+    // Nomenclature label for the insert anchor hint in the add form. Prefers
+    // selectedRowUid (the row the user actually right-clicked) so the hint shows
+    // the visible anchor even when the new add is structurally anchored to the
+    // underlying EQL row.
     anchorNomenclature() {
       if (!this.insertAnchor) return '';
-      var uid = this.insertAnchor.uid;
+      var uid = this.insertAnchor.selectedRowUid || this.insertAnchor.uid;
       for (var i = 0; i < this.eqlRows.length; i++) {
         if (this.eqlRows[i]._uid === uid) return this.eqlRows[i]['NOMENCLATURE'] || uid;
       }
@@ -1415,10 +1418,12 @@ export default {
 
     // Add a new item to the ADL log (in memory — no network call).
     // insertAnchor must be set (the inline form is only opened via the row context menu).
+    // When beforeAdlUid is set (Insert Above on an ADL-added row), splice the entry
+    // into adl[] before that uid so it appears earlier in the same anchor group.
     saveAddEntry() {
       if (!this.addForm.nomenclature.trim()) return;
       if (!this.insertAnchor) return;
-      this.adl.push({
+      var entry = {
         uid: clientUid(),
         action: 'add',
         nomenclature: this.addForm.nomenclature.trim(),
@@ -1426,7 +1431,18 @@ export default {
         anchorUid: this.insertAnchor.uid,
         anchorPosition: this.insertAnchor.position,
         timestamp: new Date().toISOString(),
-      });
+      };
+      var beforeUid = this.insertAnchor.beforeAdlUid;
+      if (beforeUid) {
+        var idx = -1;
+        for (var i = 0; i < this.adl.length; i++) {
+          if (this.adl[i].uid === beforeUid) { idx = i; break; }
+        }
+        if (idx >= 0) this.adl.splice(idx, 0, entry);
+        else this.adl.push(entry);
+      } else {
+        this.adl.push(entry);
+      }
       this.adlDirtyFlag = true;
       this.showAddForm = false;
       this.insertAnchor = null;
@@ -1602,17 +1618,52 @@ export default {
     // For EQL rows the anchor is the row's _uid; for ADL-added rows the new item
     // reuses the ADL row's own anchor so it slots in next to the same EQL row.
     ctxInsertAbove() {
-      var row = this.contextMenu.row;
-      this.insertAnchor = { uid: row._isAdded ? row._anchorUid : row._uid, position: 'above' };
-      this.showAddForm = true;
-      this.hideContextMenu();
+      this.openAddForm_(this.contextMenu.row, 'above');
     },
 
     ctxInsertBelow() {
-      var row = this.contextMenu.row;
-      this.insertAnchor = { uid: row._isAdded ? row._anchorUid : row._uid, position: 'below' };
+      this.openAddForm_(this.contextMenu.row, 'below');
+    },
+
+    // Open the inline add form anchored to a row.
+    //
+    // For EQL rows: the new add anchors directly to the row's UID with the requested
+    // position. For ADL-added rows: the new add joins the same anchor group as the
+    // selected row (same EQL anchor + same position) — Insert Below relies on the
+    // natural append order so the new entry follows the selected one; Insert Above
+    // sets beforeAdlUid so saveAddEntry splices the new entry into adl[] before the
+    // selected row's ADL entry, making it appear earlier in the same anchor group.
+    //
+    // Scrolls into view + focuses the nomenclature input so the form is obvious
+    // (it sits above the table; a right-click near the bottom would otherwise
+    // leave it off-screen).
+    openAddForm_(row, position) {
+      if (row._isAdded) {
+        this.insertAnchor = {
+          uid: row._anchorUid,
+          position: row._anchorPosition || 'below',
+          beforeAdlUid: position === 'above' ? row._adlUid : null,
+          selectedRowUid: row._uid,
+          selectedPosition: position,
+        };
+      } else {
+        this.insertAnchor = {
+          uid: row._uid,
+          position: position,
+          beforeAdlUid: null,
+          selectedRowUid: row._uid,
+          selectedPosition: position,
+        };
+      }
       this.showAddForm = true;
       this.hideContextMenu();
+      var self = this;
+      this.$nextTick(function() {
+        var el = self.$refs.addFormEl;
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        var input = el && el.querySelector('input.form-input');
+        if (input) input.focus();
+      });
     },
 
     ctxDelete() {
