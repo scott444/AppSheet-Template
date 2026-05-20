@@ -1,146 +1,103 @@
-# AppSheet Template Toolkit
+# Project_Manager
 
-Develop Google AppSheet apps offline using your Google Drive and Apps Script. Define your app as structured JSON, validate it locally, generate Google Sheets schemas, and push Apps Script code — all with your personal Google account. No Google Cloud project required.
+A Vue 3 SPA served by Google Apps Script for managing EQL projects, product catalogs, and power tables. All data is stored as JSON files in Google Drive — no database required.
+
+## What it does
+
+- **Projects** — Create from an XLSX equipment list; track baseline, modifications (adds/deletes), and a final merged view
+- **Product Catalogs** — Upload versioned, immutable CSV catalogs linked to projects
+- **Power Tables** — Manage mapping and equipment tables for rack power calculations
+- **My Sheets** — Browse Google Sheets in the project's Drive folder
 
 ## Prerequisites
 
 - Node.js 20+
-- A Google account with access to Google Drive and Apps Script
-- Enable the Apps Script API: https://script.google.com/home/usersettings
+- A Google account with Google Drive and Apps Script access
+- Enable the Apps Script API: <https://script.google.com/home/usersettings>
+- [clasp](https://github.com/google/clasp): included in devDependencies (`npm install`)
 
-## Setup
+## Deploy
 
 ```bash
 npm install
 
-# Sign in to clasp with your Google account (one-time)
+# One-time: sign in to clasp
 npx clasp login
 
-# Create an Apps Script project (one-time)
-cd appscript && npx clasp create --type webapp && cd ..
+# One-time: create the Apps Script project (generates appscript/.clasp.json)
+cd appscript && npx clasp create --type webapp --title "Project_Manager" && cd ..
+# Copy the generated .clasp.json into appscript/ (it should already be there after the above)
 
-# Push the Apps Script helper code
-npx clasp push --cwd appscript
+# Build and push to Google
+npm run clasp:push
+
+# Open the Apps Script editor in your browser
+npm run clasp:open
 ```
+
+After the first push, open the deployed web app URL and navigate to **Drive Setup** to create the `Project_Manager/` folder tree in your Google Drive. This is required before any data can be saved.
 
 ## Workflow
 
 ```
-  Local (this repo)                          Google (your account)
-  ──────────────────                         ────────────────────────
-  definition.json  ──validate──>  OK
-       │
-       ├──gen-schema──> sheet-schema.json
-       │                    │
-       │              clasp run / paste      Google Sheets
-       │              into Apps Script  ───> (data source for AppSheet)
-       │                                          │
-  appscript/src/     ──clasp push──>         Apps Script project
-                                                  │
-                                             AppSheet app
-                                             (configure in editor,
-                                              pointing at your Sheets)
+  Your browser                          Google Drive
+  ────────────                          ────────────
+  Upload XLSX  ──createProject()──>  projects/{uid}/EQL.json
+                                                     ADL.json
+                                                     project.json
+
+  Edit baseline/modifications/final  ──saveAdl()──>  projects/{uid}/ADL.json
+  Upload catalog CSV  ──createCatalog()──>  catalogs/{id}.json
+  Upload power CSVs   ──createPower*()──>   power-mappings/{id}.json
+                                            power-equipment/{id}.json
 ```
 
-### Local Commands
+Data is never stored in a Google Sheet — everything is JSON in Drive. Google Sheets can be provisioned separately via `SheetManager.js` if needed.
+
+## Development
 
 ```bash
-# Scaffold a new app definition
-npm run dev -- init -n "My App"
+# Build Vue app → appscript/dist/ (does not push)
+npm run clasp:build
 
-# Validate your app definition
-npm run dev -- validate -d apps/my_app
+# Build and push to Google Apps Script
+npm run clasp:push
 
-# Generate Google Sheets schema from definition
-npm run dev -- gen-schema -d apps/my_app
-
-# Push Apps Script code to Google
-npm run dev -- push-script
+# Open the deployed script in the Apps Script editor
+npm run clasp:open
 ```
 
-### Configuring AppSheet
+## Architecture
 
-After creating your Google Sheets (via Apps Script or manually from the schema):
+See [CLAUDE.md](CLAUDE.md) for full architecture documentation. The short version:
 
-1. Go to [AppSheet](https://www.appsheet.com) and create a new app
-2. Choose "Start with your own data" and select your Google Sheet
-3. Use your local `definition.json` as a reference to configure tables, views, actions, and automations in the AppSheet editor
+- `appscript/src/*.js` — server-side Apps Script (flat global namespace, JSON-in-Drive data layer)
+- `appscript/ui/` — Vue 3 SFCs, built by webpack (ES5 output mandatory for Caja compatibility)
+- `appscript/dist/` — webpack output, ignored in git; `clasp push` deploys from here
+- `apps/Project_Manager/` — local app definition (not used at runtime; reference only)
 
-## Project Structure
+## Server-side API
 
-```
-├── apps/                       # App definitions (tracked in git)
-│   ├── _example/               #   Example inventory app
-│   │   └── definition.json     #   Full app definition
-│   └── <your_app>/
-│       ├── definition.json     #   App tables, views, actions, automations
-│       ├── sheet-schema.json   #   Generated Sheets schema
-│       └── seed-data.json      #   (optional) Test data to load
-├── appscript/                  # Apps Script project (pushed via clasp)
-│   ├── appsscript.json         #   Apps Script manifest
-│   ├── .clasp.json.example     #   Example clasp config
-│   └── src/
-│       ├── SheetManager.js     #   Create/update Google Sheets from schemas
-│       ├── AppSheetHelper.js   #   AppSheet Data API wrapper (CRUD on tables)
-│       └── WebApp.js           #   Optional web endpoint for remote operations
-├── data-sources/               # Sheets schema documentation
-└── src/                        # Local CLI (TypeScript)
-    ├── index.ts                #   CLI entry point (commander)
-    ├── commands/               #   init, validate, generate-schema, seed, push-script
-    ├── lib/                    #   config, schema-generator, validator
-    └── types/                  #   TypeScript types for AppSheet definitions
-```
+All functions below are callable from the Vue frontend via `google.script.run`.
 
-## Apps Script Functions
-
-These run in your Google account via `clasp run` or from the Apps Script editor:
-
-| Function | Description |
+| File | Public functions |
 | --- | --- |
-| `createSpreadsheetFromSchema(schema)` | Create a new Google Sheet with headers, validation, formatting |
-| `updateSpreadsheetFromSchema(id, schema)` | Add missing sheets/columns to existing Sheet |
-| `exportSpreadsheetSchema(id)` | Export current Sheet structure as JSON |
-| `readTableRows(tableName)` | Read rows from AppSheet table (Data API) |
-| `addTableRows(tableName, rows)` | Add rows to AppSheet table |
-| `seedTable(tableName, rows, clearFirst)` | Bulk-load test data |
-
-## App Definition Format
-
-The `definition.json` file defines your app's structure:
-
-```json
-{
-  "appName": "My App",
-  "tables": [
-    {
-      "name": "Products",
-      "columns": [
-        { "name": "ID", "type": "Text", "key": true, "required": true },
-        { "name": "Name", "type": "Text", "required": true },
-        { "name": "Category", "type": "Enum", "enumValues": ["A", "B", "C"] },
-        { "name": "Price", "type": "Price" }
-      ]
-    }
-  ],
-  "views": [
-    { "name": "Products_List", "type": "deck", "table": "Products" }
-  ],
-  "settings": {
-    "startView": "Products_List",
-    "offlineMode": true
-  }
-}
-```
-
-The validator checks for: missing keys, duplicate names, broken Ref targets, empty Enums, and invalid view/action references.
+| `DriveManager.js` | `setupFolders`, `getFolderSetupStatus` |
+| `ProjectManager.js` | `createProject`, `listProjects`, `getProject`, `updateProject`, `getEqlRows`, `getAdl`, `saveAdl`, `saveAdlEntry`, `saveAdlEntries`, `removeAdlEntry`, `removeAdlEntries`, `getMetadata`, `saveMetadata`, `getPowerTableData`, `savePowerTableData`, `getColumnConfig` |
+| `CatalogManager.js` | `listCatalogs`, `getCatalog`, `createCatalog`, `deleteCatalog` |
+| `PowerAttributeManager.js` | `listPowerMappingTables`, `getPowerMapping`, `createPowerMappingTable`, `deletePowerMappingTable`, `listPowerEquipmentTables`, `getPowerEquipment`, `createPowerEquipmentTable`, `deletePowerEquipmentTable` |
+| `SheetManager.js` | `createSpreadsheetFromSchema`, `updateSpreadsheetFromSchema`, `exportSpreadsheetSchema` |
+| `WebApp.js` | `listMySpreadsheets`, `include` (template helper), `doGet` (serves the SPA) |
 
 ## Power Table CSV Formats
 
-The Power Table tab joins Equipment List (EQL) rows to physical equipment specs via two uploaded CSV tables.
+The Power Table tab joins EQL rows to physical equipment specs via two uploaded CSV tables.
 
 ### Mapping Table
 
-Maps EQL line items (Nomenclature + Option) to one or more pieces of physical equipment. One EQL row can expand to multiple equipment rows.
+Maps EQL line items (Nomenclature + Option) to one or more pieces of physical equipment.
+
+Required columns: `LIM`, `O`, `Manufacturer`, `Model`
 
 ```csv
 Nomenclature,Option,Nomenclature Description,Multiple,Power Description,Manufacturer,Model
@@ -152,10 +109,8 @@ ABC123,OPT1,2,GPU Accelerator,NVIDIA,H100
 | Column | Description |
 | --- | --- |
 | `Nomenclature` | Line Item identifier (join key with EQL) |
-| `Option` | Option code (blank for base items, when not blank acts as join key with EQL) |
-| `Nomenclature Description` | Nomenclature product description |
+| `Option` | Option code (blank for base items) |
 | `Multiple` | How many of this equipment per EQL line item |
-| `Power Description` | Equipment Power description |
 | `Manufacturer` | Equipment manufacturer (join key with Equipment table) |
 | `Model` | Equipment model (join key with Equipment table) |
 
@@ -163,25 +118,36 @@ ABC123,OPT1,2,GPU Accelerator,NVIDIA,H100
 
 Physical and power specifications keyed by Manufacturer + Model.
 
-```csv
-Manufacturer,Model,Key,PSU,AC volts min,AC volts max,AC amps max,DC volts,DC amps max,Watts max,VA max,BTU max,H (in),W (in),D (in),Weight (LBs),Operating Temp °F (min),Operating Temp °F (max),Storage Temp °F (min),Storage Temp °F (max),RU
-```
+Required columns: `Manufacturer`, `Model`
 
 | Column | Description |
 | --- | --- |
 | `Manufacturer` | Equipment manufacturer (join key) |
 | `Model` | Equipment model (join key) |
-| `Key` | Used in Google Sheets only |
-| `PSU` | Power supply units |
-| `AC volts min` | Maximum power draw (watts) |
-| `AC volts max` | Maximum power draw (watts) |
-| `AC amps max` | Maximum AC current draw |
-| `DC volts max` | Maximum AC power draw |
-| `DC amps max` | Maximum DC current draw |
 | `Watts max` | Maximum power draw (watts) |
+| `AC amps max` | Maximum AC current draw |
 | `VA max` | Maximum volt-amperes |
 | `BTU max` | Maximum heat output |
 | `Weight (LBs)` | Weight in pounds |
 | `RU` | Rack units |
 
-All other columns (voltage/temp ranges, physical dimensions) are displayed as-is. Totals per rack are calculated for PSU, Watts max, AC amps max, VA max, BTU max, and Weight (LBs).
+Rack totals are calculated for: PSU, Watts max, AC amps max, VA max, BTU max, Weight (LBs).
+
+## Data model
+
+```
+Project_Manager/                 ← Google Drive root (created by Drive Setup)
+├── app_data/
+│   └── projects/{uid}/
+│       ├── project.json         ← metadata (customer, name, description, lastModified)
+│       ├── EQL.json             ← immutable baseline equipment list
+│       ├── ADL.json             ← append-only add/delete change log
+│       ├── Metadata.json        ← per-nomenclature metadata
+│       └── PowerTable.json      ← rack assignments + active table IDs
+└── app_system/
+    ├── projects-index.json      ← lightweight project summaries
+    ├── catalog-index.json
+    ├── catalogs/{id}.json
+    ├── power-mappings/{id}.json
+    └── power-equipment/{id}.json
+```

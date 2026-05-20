@@ -22,7 +22,7 @@
       Apps Script Connected
     </span>
     <p style="margin-top:10px;color:var(--text-muted);line-height:1.6">
-      This project is linked to your AppSheet Template workflow.
+      This app manages EQL projects, catalogs, and power tables stored in Google Drive.
       Use the actions below to interact with your data sources.
     </p>
   </div>

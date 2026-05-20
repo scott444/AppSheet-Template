@@ -1,6 +1,6 @@
 <template>
   <header class="topbar">
-    <span class="topbar-logo">AppSheet Template</span>
+    <span class="topbar-logo">Project Manager</span>
     <div class="topbar-spacer"></div>
     <div class="topbar-status">
       <span class="status-dot"></span>

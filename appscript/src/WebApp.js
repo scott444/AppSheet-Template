@@ -1,11 +1,8 @@
 /**
- * WebApp — Optional web endpoint for the Apps Script project.
- *
- * Deploy as a web app to provide a simple API for your local CLI
- * to trigger sheet operations remotely without clasp run.
+ * WebApp — Serves the Vue 3 SPA and exposes helper functions callable via google.script.run.
  *
  * Deploy: Apps Script editor > Deploy > New deployment > Web app
- * Set "Who has access" to "Only myself"
+ * Set "Execute as" to "Me" and "Who has access" to the appropriate audience.
  */
 
 /**
@@ -28,7 +25,7 @@ function doGet(e) {
   if (!action) {
     return HtmlService.createTemplateFromFile("index")
       .evaluate()
-      .setTitle("AppSheet Template");
+      .setTitle("Project_Manager");
   }
   if (action === "status") {
     return jsonResponse_({ status: "ok", timestamp: new Date().toISOString() });
@@ -45,44 +42,6 @@ function doGet(e) {
 
   if (action === "folder-status") {
     return jsonResponse_(getFolderSetupStatus());
-  }
-
-  return jsonResponse_({ error: "Unknown action: " + action }, 400);
-}
-
-/**
- * Handle POST requests — used for creating/updating sheets and data operations.
- */
-function doPost(e) {
-  var body = JSON.parse(e.postData.contents);
-  var action = body.action;
-
-  if (action === "create-spreadsheet") {
-    var result = createSpreadsheetFromSchema(body.schema);
-    return jsonResponse_(result);
-  }
-
-  if (action === "update-spreadsheet") {
-    var result = updateSpreadsheetFromSchema(body.spreadsheetId, body.schema);
-    return jsonResponse_(result);
-  }
-
-  if (action === "seed-table") {
-    var result = seedTable(body.tableName, body.rows, body.clearFirst || false);
-    return jsonResponse_(result);
-  }
-
-  if (action === "read-table") {
-    var rows = readTableRows(body.tableName);
-    return jsonResponse_({ rows: rows, count: rows.length });
-  }
-
-  if (action === "setup-folders") {
-    if (!body.appName) {
-      return jsonResponse_({ error: "Missing appName" }, 400);
-    }
-    var result = setupFolders(body.appName);
-    return jsonResponse_(result);
   }
 
   return jsonResponse_({ error: "Unknown action: " + action }, 400);

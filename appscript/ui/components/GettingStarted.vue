@@ -22,23 +22,23 @@ export default {
       steps: [
         {
           num: 1,
-          title: 'Define your app locally',
-          desc: 'Create <code>apps/&lt;name&gt;/definition.json</code> using <code>npm run dev -- init -n "MyApp"</code>',
+          title: 'Run Drive Setup',
+          desc: 'Navigate to <strong>Drive Setup</strong> in the sidebar and enter your app name. This creates the <code>Project_Manager/app_data/</code> and <code>Project_Manager/app_system/</code> folder tree in your Google Drive.',
         },
         {
           num: 2,
-          title: 'Validate & generate schema',
-          desc: 'Run <code>npm run dev -- validate -d apps/MyApp</code> then <code>npm run dev -- gen-schema -d apps/MyApp</code>',
+          title: 'Create a project from an EQL',
+          desc: 'Go to <strong>Projects</strong> and click <strong>New Project</strong>. Upload your XLSX equipment list — the app creates a project folder with <code>EQL.json</code> and <code>ADL.json</code> in Drive.',
         },
         {
           num: 3,
-          title: 'Create the Google Sheet',
-          desc: 'Open this Apps Script project and run <code>createSpreadsheetFromSchema(schema)</code> with the contents of your generated <code>sheet-schema.json</code>.',
+          title: 'Manage your equipment list',
+          desc: 'Open a project and use the <strong>Baseline</strong>, <strong>Modifications</strong>, and <strong>Final</strong> tabs to review and track adds/deletes against the original EQL.',
         },
         {
           num: 4,
-          title: 'Create your AppSheet app',
-          desc: 'Go to <strong>appsheet.com</strong>, click <strong>Create &gt; App &gt; Start with existing data</strong>, and select the Google Sheet you just created.',
+          title: 'Upload catalogs and power tables',
+          desc: 'Use <strong>Product Catalog</strong> to upload versioned CSV catalogs, and <strong>Power Tables</strong> to upload mapping and equipment CSVs for rack power calculations.',
         },
       ],
     };

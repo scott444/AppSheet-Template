@@ -55,7 +55,7 @@
       <input
         v-model="appName"
         type="text"
-        placeholder="e.g. MyApp"
+        placeholder="e.g. Project_Manager"
         style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;flex:1;min-width:160px;background:var(--bg);color:var(--text)"
         @keydown.enter="runSetup"
       />

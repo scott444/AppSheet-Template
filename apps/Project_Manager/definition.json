@@ -1,5 +1,5 @@
 {
-  "appName": "MyApp",
+  "appName": "Project_Manager",
   "description": "",
   "tables": [
     {
@@ -55,7 +55,7 @@
     }
   ],
   "settings": {
-    "appName": "MyApp",
+    "appName": "Project_Manager",
     "icon": "apps",
     "primaryColor": "#1976D2",
     "startView": "Items_List",
