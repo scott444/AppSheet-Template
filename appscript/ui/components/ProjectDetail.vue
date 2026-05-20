@@ -128,11 +128,10 @@
           </div>
         </div>
 
-        <!-- Modifications: toolbar — Add Item + Save/Discard when dirty -->
+        <!-- Modifications: toolbar — Save/Discard when dirty. Adds are anchor-only,
+             so the inline form is opened from the row context menu (Insert Above/Below). -->
         <div v-if="viewMode === 'modifications'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn" @click="showAddForm = !showAddForm">
-            <span class="icon">add</span> Add Item
-          </button>
+          <span style="font-size:12px;color:var(--text-muted)">Right-click a row to insert, replace, or delete.</span>
           <template v-if="adlDirty">
             <button class="btn btn-save" :disabled="adlSaving" @click="saveAdl">
               <span class="icon">{{ adlSaving ? 'hourglass_empty' : 'save' }}</span>
@@ -670,6 +669,9 @@
       <div class="context-menu-item" @click="ctxInsertBelow">
         <span class="icon" style="font-size:16px">vertical_align_bottom</span> Insert Below
       </div>
+      <div v-if="contextMenu.rowType === 'eql'" class="context-menu-item" @click="ctxReplace">
+        <span class="icon" style="font-size:16px">swap_horiz</span> Replace
+      </div>
       <div class="context-menu-separator"></div>
       <div v-if="contextMenu.rowType === 'eql'" class="context-menu-item context-menu-item--danger" @click="ctxDelete">
         <span class="icon" style="font-size:16px">delete</span> Delete
@@ -679,6 +681,81 @@
       </div>
       <div v-else-if="contextMenu.rowType === 'adl-added'" class="context-menu-item" @click="ctxUndoAdd">
         <span class="icon" style="font-size:16px">undo</span> Undo Add
+      </div>
+    </div>
+
+    <!-- Replace modal — pick a catalog item to replace the right-clicked EQL row.
+         Commits a delete (of the original) + add (of the picked catalog row) to ADL. -->
+    <div
+      v-if="replaceModal.visible"
+      style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:center;justify-content:center"
+      @click.self="cancelReplace"
+    >
+      <div class="card" style="max-width:720px;width:90%;max-height:80vh;display:flex;flex-direction:column;margin:0">
+        <div class="card-title" style="display:flex;align-items:center;gap:8px">
+          <span class="icon" style="font-size:18px">swap_horiz</span>
+          Replace Item
+        </div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+          Replacing <strong style="color:var(--text)">{{ replaceModal.originalRow && replaceModal.originalRow['NOMENCLATURE'] }}</strong>
+          — pick a catalog item below. One delete + one add will be recorded.
+        </div>
+
+        <!-- Catalog picker + search -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <select
+            v-if="catalogs.length"
+            :value="replaceModal.catalogId || ''"
+            class="form-input"
+            style="width:auto;min-width:200px;padding:5px 8px;font-size:13px"
+            @change="changeReplaceCatalog($event.target.value || null)"
+          >
+            <option value="">Select catalog…</option>
+            <option v-for="cat in catalogs" :key="cat.id" :value="cat.id">{{ cat.name }} — {{ cat.version }}</option>
+          </select>
+          <input
+            v-model="replaceModal.search"
+            type="text"
+            class="form-input"
+            placeholder="Filter…"
+            style="flex:1;min-width:160px;padding:5px 8px;font-size:13px"
+          />
+        </div>
+
+        <!-- Catalog rows -->
+        <div style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:6px;min-height:200px">
+          <div v-if="replaceModal.loading" style="padding:16px;color:var(--text-muted);font-size:13px">Loading catalog…</div>
+          <div v-else-if="replaceModal.error" class="result-box error" style="display:block;margin:12px">{{ replaceModal.error }}</div>
+          <div v-else-if="!replaceModal.catalogId" style="padding:16px;color:var(--text-muted);font-size:13px">Select a catalog to browse items.</div>
+          <div v-else-if="!filteredReplaceRows.length" style="padding:16px;color:var(--text-muted);font-size:13px">No matching items.</div>
+          <table v-else class="sheets-table" style="margin-top:0;font-size:13px">
+            <thead>
+              <tr>
+                <th v-for="col in replaceModal.previewColumns" :key="col">{{ col }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(row, i) in filteredReplaceRows"
+                :key="i"
+                :class="{ 'eql-row-added': replaceModal.selectedRow === row }"
+                style="cursor:pointer"
+                @click="replaceModal.selectedRow = row"
+              >
+                <td v-for="col in replaceModal.previewColumns" :key="col">{{ row[col] }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-save" :disabled="!replaceModal.selectedRow" @click="confirmReplace">
+            <span class="icon">swap_horiz</span> Replace
+          </button>
+          <button class="btn" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border)" @click="cancelReplace">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -740,6 +817,17 @@ export default {
 
       // Context menu state
       contextMenu: { visible: false, x: 0, y: 0, row: null, rowType: null },
+      replaceModal: {
+        visible: false,
+        originalRow: null,
+        catalogId: null,
+        catalogRows: [],
+        previewColumns: [],
+        search: '',
+        selectedRow: null,
+        loading: false,
+        error: '',
+      },
 
       // Column configuration (loaded from server; defaults until then)
       columnConfig: {
@@ -904,50 +992,10 @@ export default {
         });
     },
 
-    // Merged list for Modifications view: EQL rows with ADL-added rows interleaved at their
-    // anchor positions. Unanchored adds (toolbar "Add Item") go at the bottom.
-    // Adds whose anchor no longer exists fall back to the bottom (stale anchor graceful degradation).
+    // Merged list for Modifications view: EQL rows (including deleted, rendered struck-through)
+    // with ADL-added rows interleaved at their anchor positions.
     modificationsRows() {
-      var anchorMap = {};  // eqlUid → { above: [addedRow, ...], below: [addedRow, ...] }
-      var unanchored = [];
-
-      var addedRows = this.adlAddedRows;
-      for (var i = 0; i < addedRows.length; i++) {
-        var ar = addedRows[i];
-        if (ar._anchorUid) {
-          if (!anchorMap[ar._anchorUid]) anchorMap[ar._anchorUid] = { above: [], below: [] };
-          anchorMap[ar._anchorUid][ar._anchorPosition || 'below'].push(ar);
-        } else {
-          unanchored.push(ar);
-        }
-      }
-
-      // Walk EQL rows in order, interleaving anchored adds around each row
-      var result = [];
-      var resolvedAnchors = {};
-      for (var j = 0; j < this.eqlRows.length; j++) {
-        var row = this.eqlRows[j];
-        var anchored = anchorMap[row._uid];
-        if (anchored) {
-          resolvedAnchors[row._uid] = true;
-          if (anchored.above.length) result = result.concat(anchored.above);
-          result.push(row);
-          if (anchored.below.length) result = result.concat(anchored.below);
-        } else {
-          result.push(row);
-        }
-      }
-
-      // Any adds whose anchor EQL row no longer exists → fall to bottom (stale anchor)
-      var anchorUids = Object.keys(anchorMap);
-      for (var k = 0; k < anchorUids.length; k++) {
-        if (!resolvedAnchors[anchorUids[k]]) {
-          var stale = anchorMap[anchorUids[k]];
-          unanchored = unanchored.concat(stale.above).concat(stale.below);
-        }
-      }
-
-      return result.concat(unanchored);
+      return this.interleaveEqlWithAdds(false);
     },
 
     // Nomenclature label for the insert anchor hint in the add form
@@ -963,12 +1011,12 @@ export default {
       return uid;
     },
 
-    // Clean merged list: EQL minus deleted _uids + ADL adds + metadata merged in
+    // Clean merged list: EQL minus deleted _uids + ADL adds interleaved at their anchors,
+    // with metadata merged in. Anchors pointing at deleted rows still slot the add into that
+    // row's original position (so a Replace shows the new row where the old one was).
     finalRows() {
       var self = this;
-      var kept = this.eqlRows.filter(function(r) { return !self.deletedUids[r._uid]; });
-      var merged = kept.concat(self.adlAddedRows);
-      return merged.map(function(r) {
+      return this.interleaveEqlWithAdds(true).map(function(r) {
         return Object.assign({}, r, self.metadataEdits[r.NOMENCLATURE] || {});
       });
     },
@@ -994,6 +1042,22 @@ export default {
     currentPage() {
       var start = this.eqlPageNum * this.pageSize;
       return this.currentRows.slice(start, start + this.pageSize);
+    },
+
+    // Filter the loaded catalog rows by the replace-modal search box (case-insensitive
+    // substring match across all preview columns).
+    filteredReplaceRows() {
+      var rows = this.replaceModal.catalogRows;
+      var q = (this.replaceModal.search || '').trim().toLowerCase();
+      if (!q) return rows;
+      var cols = this.replaceModal.previewColumns;
+      return rows.filter(function(row) {
+        for (var i = 0; i < cols.length; i++) {
+          var v = row[cols[i]];
+          if (v != null && String(v).toLowerCase().indexOf(q) !== -1) return true;
+        }
+        return false;
+      });
     },
 
     eqlTotalPages() {
@@ -1350,22 +1414,19 @@ export default {
     // ── In-memory modification methods ─────────────────────────────────────
 
     // Add a new item to the ADL log (in memory — no network call).
-    // If insertAnchor is set (from context menu Insert Above/Below), the ADL entry
-    // includes anchorUid + anchorPosition so modificationsRows can place it correctly.
+    // insertAnchor must be set (the inline form is only opened via the row context menu).
     saveAddEntry() {
       if (!this.addForm.nomenclature.trim()) return;
-      var entry = {
+      if (!this.insertAnchor) return;
+      this.adl.push({
         uid: clientUid(),
         action: 'add',
         nomenclature: this.addForm.nomenclature.trim(),
         notes: this.addForm.notes.trim(),
+        anchorUid: this.insertAnchor.uid,
+        anchorPosition: this.insertAnchor.position,
         timestamp: new Date().toISOString(),
-      };
-      if (this.insertAnchor) {
-        entry.anchorUid      = this.insertAnchor.uid;
-        entry.anchorPosition = this.insertAnchor.position;
-      }
-      this.adl.push(entry);
+      });
       this.adlDirtyFlag = true;
       this.showAddForm = false;
       this.insertAnchor = null;
@@ -1377,6 +1438,33 @@ export default {
       this.insertAnchor = null;
       this.addForm = { nomenclature: '', notes: '' };
       this.adlSaveError = '';
+    },
+
+    // Walk EQL rows in order and interleave ADL-added rows at their anchor positions
+    // (above/below the anchor EQL row). All adds are required to be anchored to an
+    // existing EQL row. When skipDeleted is true, EQL rows marked for deletion are
+    // omitted but their anchored adds still appear at the deleted row's slot — so a
+    // Replace shows the new row in place of the old one in the Final List.
+    interleaveEqlWithAdds(skipDeleted) {
+      var anchorMap = {};  // eqlUid → { above: [addedRow, ...], below: [addedRow, ...] }
+      var addedRows = this.adlAddedRows;
+      for (var i = 0; i < addedRows.length; i++) {
+        var ar = addedRows[i];
+        if (!anchorMap[ar._anchorUid]) anchorMap[ar._anchorUid] = { above: [], below: [] };
+        anchorMap[ar._anchorUid][ar._anchorPosition || 'below'].push(ar);
+      }
+
+      var result = [];
+      for (var j = 0; j < this.eqlRows.length; j++) {
+        var row = this.eqlRows[j];
+        var anchored = anchorMap[row._uid];
+        var isDeleted = !!this.deletedUids[row._uid];
+        if (anchored && anchored.above.length) result = result.concat(anchored.above);
+        if (!skipDeleted || !isDeleted) result.push(row);
+        if (anchored && anchored.below.length) result = result.concat(anchored.below);
+      }
+
+      return result;
     },
 
     isMainLineItem(row) {
@@ -1510,22 +1598,19 @@ export default {
       if (event.key === 'Escape') this.hideContextMenu();
     },
 
-    // Insert a new item above the right-clicked row.
-    // For EQL rows: anchor = that row's _uid.
-    // For ADL-added rows: reuse their own anchorUid (same EQL anchor, position 'above');
-    //   if unanchored, the new item will also be unanchored (goes to bottom).
+    // Insert a new item above/below the right-clicked row.
+    // For EQL rows the anchor is the row's _uid; for ADL-added rows the new item
+    // reuses the ADL row's own anchor so it slots in next to the same EQL row.
     ctxInsertAbove() {
       var row = this.contextMenu.row;
-      var anchorUid = row._isAdded ? row._anchorUid : row._uid;
-      this.insertAnchor = anchorUid ? { uid: anchorUid, position: 'above' } : null;
+      this.insertAnchor = { uid: row._isAdded ? row._anchorUid : row._uid, position: 'above' };
       this.showAddForm = true;
       this.hideContextMenu();
     },
 
     ctxInsertBelow() {
       var row = this.contextMenu.row;
-      var anchorUid = row._isAdded ? row._anchorUid : row._uid;
-      this.insertAnchor = anchorUid ? { uid: anchorUid, position: 'below' } : null;
+      this.insertAnchor = { uid: row._isAdded ? row._anchorUid : row._uid, position: 'below' };
       this.showAddForm = true;
       this.hideContextMenu();
     },
@@ -1543,6 +1628,102 @@ export default {
     ctxUndoAdd() {
       this.undoAdlEntry(this.contextMenu.row._adlUid);
       this.hideContextMenu();
+    },
+
+    // Open the Replace modal for the right-clicked EQL row. Defaults to the
+    // modification catalog if set, otherwise the baseline catalog.
+    ctxReplace() {
+      var row = this.contextMenu.row;
+      var defaultCatalogId = this.modificationCatalogId || this.baselineCatalogId || null;
+      this.replaceModal.visible = true;
+      this.replaceModal.originalRow = row;
+      this.replaceModal.search = '';
+      this.replaceModal.selectedRow = null;
+      this.replaceModal.error = '';
+      this.replaceModal.catalogRows = [];
+      this.replaceModal.previewColumns = [];
+      this.replaceModal.catalogId = defaultCatalogId;
+      this.hideContextMenu();
+      if (defaultCatalogId) this.loadReplaceCatalog(defaultCatalogId);
+    },
+
+    changeReplaceCatalog(catalogId) {
+      this.replaceModal.catalogId = catalogId;
+      this.replaceModal.selectedRow = null;
+      this.replaceModal.catalogRows = [];
+      this.replaceModal.previewColumns = [];
+      this.replaceModal.error = '';
+      if (catalogId) this.loadReplaceCatalog(catalogId);
+    },
+
+    loadReplaceCatalog(catalogId) {
+      var self = this;
+      this.replaceModal.loading = true;
+      this.replaceModal.error = '';
+      google.script.run
+        .withSuccessHandler(function(rows) {
+          var data = rows || [];
+          self.replaceModal.catalogRows = data;
+          // Pick up to 5 columns for the preview table — Nomenclature + Description first,
+          // then Manufacturer/Model when present.
+          if (data.length) {
+            var allCols = Object.keys(data[0]);
+            var preferred = ['Nomenclature', 'NOMENCLATURE', 'Description', 'DESCRIPTION', 'Manufacturer', 'Model'];
+            var picked = preferred.filter(function(c) { return allCols.indexOf(c) !== -1; });
+            var rest = allCols.filter(function(c) { return picked.indexOf(c) === -1; });
+            self.replaceModal.previewColumns = picked.concat(rest).slice(0, 5);
+          }
+          self.replaceModal.loading = false;
+        })
+        .withFailureHandler(function(err) {
+          self.replaceModal.error = (err && err.message) || String(err);
+          self.replaceModal.loading = false;
+        })
+        .getCatalog(catalogId);
+    },
+
+    // Commit the replace: one delete ADL entry for the original row + one add
+    // ADL entry for the picked catalog row, anchored below the original.
+    confirmReplace() {
+      var original = this.replaceModal.originalRow;
+      var picked = this.replaceModal.selectedRow;
+      if (!original || !picked) return;
+
+      // Case-insensitive Nomenclature lookup on the catalog row
+      var newNomenclature = picked['Nomenclature'] || picked['NOMENCLATURE'] || '';
+      var newDescription  = picked['Description'] || picked['DESCRIPTION'] || '';
+      var oldNomenclature = original['NOMENCLATURE'] || '';
+      var now = new Date().toISOString();
+
+      this.adl.push({
+        uid: clientUid(),
+        action: 'delete',
+        nomenclature: oldNomenclature,
+        targetUid: original._uid,
+        notes: 'Replaced by ' + newNomenclature,
+        timestamp: now,
+      });
+      this.adl.push({
+        uid: clientUid(),
+        action: 'add',
+        nomenclature: newNomenclature,
+        notes: newDescription || ('Replaces ' + oldNomenclature),
+        anchorUid: original._uid,
+        anchorPosition: 'below',
+        timestamp: now,
+      });
+      this.adlDirtyFlag = true;
+      this.cancelReplace();
+    },
+
+    cancelReplace() {
+      this.replaceModal.visible = false;
+      this.replaceModal.originalRow = null;
+      this.replaceModal.selectedRow = null;
+      this.replaceModal.search = '';
+      this.replaceModal.catalogRows = [];
+      this.replaceModal.previewColumns = [];
+      this.replaceModal.error = '';
     },
 
     // ── Utilities ───────────────────────────────────────────────────────────
