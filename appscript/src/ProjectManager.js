@@ -2,14 +2,16 @@
  * ProjectManager — Manages EQL projects stored as JSON files in Google Drive.
  *
  * Folder layout per project:
- *   app_data/projects/{projectId}/
+ *   app_data/projects/{projectNumber}_{projectName}/
  *     ├── project.json    — project metadata (customer, projectName, date, etc.)
  *     ├── EQL.json        — immutable equipment list rows (parsed from XLSX client-side)
  *     ├── ADL.json        — append-only Add/Delete change log
  *     └── Metadata.json   — item metadata keyed by NOMENCLATURE value
  *
- * Folder names are based on the stable project ID — not customer/projectName —
- * so both fields can be edited freely without any folder rename.
+ * Folder names are human-readable "{projectNumber}_{projectName}" and kept unique
+ * among sibling project folders. They are cosmetic only: the stable key is the
+ * generated UID in `id`, and all lookups go through `id`/`folderId`, never the
+ * folder name. updateProject renames the folder to keep it in sync.
  *
  * Project index:
  *   app_system/projects-index.json — array of lightweight project summaries for fast listing
@@ -79,6 +81,73 @@ function getOrCreateFolder_(parentFolder, name) {
   var folders = parentFolder.getFoldersByName(name);
   if (folders.hasNext()) return folders.next();
   return parentFolder.createFolder(name);
+}
+
+/**
+ * Normalize one part of a project folder name: collapse path separators and
+ * whitespace runs to single spaces and trim. Keeps names readable in Drive
+ * while avoiding characters that read as path boundaries.
+ * @param {string} s
+ * @returns {string}
+ */
+function sanitizeFolderPart_(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\\/\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Build the desired display name for a project folder: "{projectNumber}_{projectName}".
+ * Falls back to just the project name when no number is set, and to the stable
+ * UID when both are empty (should never happen — projectName is required).
+ * @param {string} projectNumber
+ * @param {string} projectName
+ * @param {string} fallbackId - stable project UID used only if both parts are empty
+ * @returns {string}
+ */
+function buildProjectFolderBaseName_(projectNumber, projectName, fallbackId) {
+  var num = sanitizeFolderPart_(projectNumber);
+  var name = sanitizeFolderPart_(projectName);
+  var base = num ? (num + '_' + name) : name;
+  return base || fallbackId;
+}
+
+/**
+ * Return a folder name that is unique among the direct children of
+ * projectsFolder, appending " (2)", " (3)", … on collision. A folder whose
+ * id matches excludeFolderId does not count as a collision (used on rename so
+ * a folder never collides with itself).
+ * @param {Folder} projectsFolder
+ * @param {string} base
+ * @param {string} [excludeFolderId]
+ * @returns {string}
+ */
+function uniqueProjectFolderName_(projectsFolder, base, excludeFolderId) {
+  var candidate = base;
+  var n = 2;
+  while (folderNameTaken_(projectsFolder, candidate, excludeFolderId)) {
+    candidate = base + ' (' + n + ')';
+    n++;
+  }
+  return candidate;
+}
+
+/**
+ * True if any child folder of projectsFolder is named `name`, ignoring a
+ * folder whose id equals excludeFolderId.
+ * @param {Folder} projectsFolder
+ * @param {string} name
+ * @param {string} [excludeFolderId]
+ * @returns {boolean}
+ */
+function folderNameTaken_(projectsFolder, name, excludeFolderId) {
+  var it = projectsFolder.getFoldersByName(name);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!excludeFolderId || f.getId() !== excludeFolderId) return true;
+  }
+  return false;
 }
 
 /**
@@ -193,25 +262,33 @@ function getColumnConfig() {
  * @param {string} customer - Customer name (used as subfolder)
  * @param {string} projectName - Project name
  * @param {Object[]} eqlRows - Array of row objects parsed from XLSX (no UIDs yet)
+ * @param {string} [projectNumber] - Customer-facing project number/ID (optional)
+ * @param {string} [projectFolderUrl] - URL to the external project folder (optional)
  * @returns {{ id: string, folderId: string }} The new project ID and folder ID
  */
-function createProject(customer, projectName, eqlRows) {
+function createProject(customer, projectName, eqlRows, projectNumber, projectFolderUrl) {
   if (!customer || !customer.trim()) throw new Error('Customer name is required');
   if (!projectName || !projectName.trim()) throw new Error('Project name is required');
+  if (!projectNumber || !String(projectNumber).trim()) throw new Error('Project number is required');
   if (!eqlRows || eqlRows.length === 0) throw new Error('Equipment list has no rows');
 
   var dataFolderId = getDataFolderId_();
   var dataFolder = DriveApp.getFolderById(dataFolderId);
 
-  // Build folder tree: app_data/projects/{projectId}/
-  // Folder name is the stable project ID — decoupled from customer/projectName
-  // so both fields can be edited later without any folder rename.
+  // Build folder tree: app_data/projects/{projectNumber}_{projectName}/
+  // The folder name is human-readable; the stable key is the generated UID
+  // stored as `id` in project.json and the index, so lookups never depend on
+  // the folder name. The name is kept unique among sibling project folders.
   var date = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   var projectsFolder = getOrCreateFolder_(dataFolder, 'projects');
 
-  // Generate project ID first so we can use it as the folder name
+  // Generate the stable project ID (used as the key everywhere, not as the folder name)
   var projectId = generateUid_();
-  var projectFolder = projectsFolder.createFolder(projectId);
+  var folderName = uniqueProjectFolderName_(
+    projectsFolder,
+    buildProjectFolderBaseName_(projectNumber, projectName, projectId)
+  );
+  var projectFolder = projectsFolder.createFolder(folderName);
   var projectFolderId = projectFolder.getId();
 
   // Assign UIDs to each EQL row
@@ -230,6 +307,8 @@ function createProject(customer, projectName, eqlRows) {
     id: projectId,
     customer: customer.trim(),
     projectName: projectName.trim(),
+    projectNumber: projectNumber ? String(projectNumber).trim() : '',
+    projectFolderUrl: projectFolderUrl ? String(projectFolderUrl).trim() : '',
     description: '',
     date: date,
     folderId: projectFolderId,
@@ -249,6 +328,8 @@ function createProject(customer, projectName, eqlRows) {
     id: projectId,
     customer: customer.trim(),
     projectName: projectName.trim(),
+    projectNumber: projectMeta.projectNumber,
+    projectFolderUrl: projectMeta.projectFolderUrl,
     date: date,
     folderId: projectFolderId,
     createdAt: createdAt,
@@ -471,6 +552,17 @@ function updateProject(projectId, updates) {
   projectMeta.description   = description;
   projectMeta.lastModified  = now;
 
+  // Customer-facing fields — only update when explicitly provided.
+  // Project number is required: reject a blank value when it's being set.
+  if ('projectNumber' in updates) {
+    var newProjectNumber = updates.projectNumber != null ? String(updates.projectNumber).trim() : '';
+    if (!newProjectNumber) throw new Error('Project number is required');
+    projectMeta.projectNumber = newProjectNumber;
+  }
+  if ('projectFolderUrl' in updates) {
+    projectMeta.projectFolderUrl = updates.projectFolderUrl != null ? String(updates.projectFolderUrl).trim() : '';
+  }
+
   // Catalog version linkage (optional fields — only update if explicitly provided)
   if ('baselineCatalogId' in updates) {
     projectMeta.baselineCatalogId = updates.baselineCatalogId || null;
@@ -480,15 +572,99 @@ function updateProject(projectId, updates) {
   }
   writeJsonFile_(entry.folderId, 'project.json', projectMeta);
 
+  // Keep the Drive folder name in sync with "{projectNumber}_{projectName}".
+  // Purely cosmetic — every lookup keys off `id`/`folderId`, so a failure here
+  // must never fail the metadata update.
+  try {
+    var projectFolder = DriveApp.getFolderById(entry.folderId);
+    var parents = projectFolder.getParents();
+    var projectsFolder = parents.hasNext() ? parents.next() : null;
+    if (projectsFolder) {
+      var base = buildProjectFolderBaseName_(projectMeta.projectNumber, projectName, projectId);
+      var desiredName = uniqueProjectFolderName_(projectsFolder, base, entry.folderId);
+      if (desiredName !== projectFolder.getName()) {
+        projectFolder.setName(desiredName);
+      }
+    }
+  } catch (renameErr) {
+    console.warn('ProjectManager: could not rename folder for project ' + projectId + ': ' + renameErr);
+  }
+
   // Update the lightweight index entry (inline lastModified to avoid a double index read/write)
   index[entryIdx].customer     = customer;
   index[entryIdx].projectName  = projectName;
+  index[entryIdx].projectNumber    = projectMeta.projectNumber || '';
+  index[entryIdx].projectFolderUrl = projectMeta.projectFolderUrl || '';
   index[entryIdx].lastModified = now;
   writeProjectsIndex_(index);
 
   console.log('ProjectManager: updated project ' + projectId + ' → "' + projectName + '" / "' + customer + '"');
 
   return projectMeta;
+}
+
+/**
+ * One-time maintenance: backfill projects that predate the projectNumber /
+ * projectFolderUrl fields and the "{projectNumber}_{projectName}" folder naming.
+ *
+ * For every project in the index it (a) copies projectNumber/projectFolderUrl
+ * from the authoritative project.json into the lightweight index entry, and
+ * (b) renames the Drive folder to the current unique naming scheme. Both are
+ * idempotent — running it repeatedly is a no-op once everything is in sync.
+ * Folder-name lookups never depend on the name (keyed by id/folderId), so a
+ * rename failure for one project is logged and skipped, not fatal.
+ *
+ * @returns {{ total: number, indexUpdated: number, foldersRenamed: number, errors: string[] }}
+ */
+function backfillProjectFields() {
+  var index = readProjectsIndex_();
+  var indexUpdated = 0;
+  var foldersRenamed = 0;
+  var errors = [];
+
+  for (var i = 0; i < index.length; i++) {
+    var entry = index[i];
+    try {
+      var meta = readJsonFile_(entry.folderId, 'project.json');
+      if (!meta) {
+        errors.push(entry.id + ': project.json not found');
+        continue;
+      }
+
+      var number = meta.projectNumber || '';
+      var folderUrl = meta.projectFolderUrl || '';
+
+      // (a) Sync the lightweight index entry
+      if (entry.projectNumber !== number || entry.projectFolderUrl !== folderUrl) {
+        entry.projectNumber = number;
+        entry.projectFolderUrl = folderUrl;
+        indexUpdated++;
+      }
+
+      // (b) Rename the Drive folder to the current naming scheme
+      var projectFolder = DriveApp.getFolderById(entry.folderId);
+      var parents = projectFolder.getParents();
+      var projectsFolder = parents.hasNext() ? parents.next() : null;
+      if (projectsFolder) {
+        var base = buildProjectFolderBaseName_(number, meta.projectName || entry.projectName, entry.id);
+        var desiredName = uniqueProjectFolderName_(projectsFolder, base, entry.folderId);
+        if (desiredName !== projectFolder.getName()) {
+          projectFolder.setName(desiredName);
+          foldersRenamed++;
+        }
+      }
+    } catch (err) {
+      errors.push((entry && entry.id ? entry.id : '?') + ': ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  if (indexUpdated > 0) writeProjectsIndex_(index);
+
+  console.log('ProjectManager: backfill complete — ' + index.length + ' projects, ' +
+    indexUpdated + ' index entries updated, ' + foldersRenamed + ' folders renamed, ' +
+    errors.length + ' errors');
+
+  return { total: index.length, indexUpdated: indexUpdated, foldersRenamed: foldersRenamed, errors: errors };
 }
 
 /**

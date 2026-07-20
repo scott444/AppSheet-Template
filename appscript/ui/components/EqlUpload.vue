@@ -30,6 +30,28 @@
     </div>
 
     <div class="form-group">
+      <label class="form-label">Project Number/ID</label>
+      <input
+        v-model="projectNumber"
+        type="text"
+        class="form-input"
+        placeholder="e.g. PRJ-10432"
+        :disabled="loading"
+      />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Project Folder</label>
+      <input
+        v-model="projectFolderUrl"
+        type="url"
+        class="form-input"
+        placeholder="https://… link to the project folder (optional)"
+        :disabled="loading"
+      />
+    </div>
+
+    <div class="form-group">
       <label class="form-label">Equipment List (XLSX)</label>
       <input
         ref="fileInput"
@@ -132,6 +154,8 @@ export default {
       step: 'form',       // form | preview | success
       customer: '',
       projectName: '',
+      projectNumber: '',
+      projectFolderUrl: '',
       selectedFile: null,
       parsedRows: [],
       parseError: '',
@@ -143,7 +167,7 @@ export default {
 
   computed: {
     canPreview() {
-      return this.customer.trim() && this.projectName.trim() && this.selectedFile;
+      return this.customer.trim() && this.projectName.trim() && this.projectNumber.trim() && this.selectedFile;
     },
     previewColumns() {
       if (!this.parsedRows.length) return [];
@@ -237,13 +261,15 @@ export default {
           self.error = err.message || String(err);
           self.loading = false;
         })
-        .createProject(this.customer.trim(), this.projectName.trim(), this.parsedRows);
+        .createProject(this.customer.trim(), this.projectName.trim(), this.parsedRows, this.projectNumber.trim(), this.projectFolderUrl.trim());
     },
 
     reset() {
       this.step = 'form';
       this.customer = '';
       this.projectName = '';
+      this.projectNumber = '';
+      this.projectFolderUrl = '';
       this.selectedFile = null;
       this.parsedRows = [];
       this.parseError = '';

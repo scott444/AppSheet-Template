@@ -2,6 +2,13 @@
   <header class="topbar">
     <span class="topbar-logo">Project Manager</span>
     <div class="topbar-spacer"></div>
+    <button
+      class="theme-toggle"
+      :title="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+      @click="toggleTheme"
+    >
+      <span class="icon">{{ theme === 'dark' ? 'light_mode' : 'dark_mode' }}</span>
+    </button>
     <div class="topbar-status">
       <span class="status-dot"></span>
       <span>Connected</span>
@@ -59,7 +66,12 @@ export default {
     return {
       currentSection: 'dashboard',
       selectedProjectId: null,
+      theme: 'light',
     };
+  },
+
+  mounted() {
+    this.initTheme();
   },
 
   computed: {
@@ -80,6 +92,33 @@ export default {
     openProject(projectId) {
       this.selectedProjectId = projectId;
       this.currentSection = 'project-detail';
+    },
+
+    // Theme: use the stored preference if the user has chosen one, otherwise
+    // follow the OS setting. localStorage can throw inside the Apps Script
+    // sandbox iframe, so every access is guarded.
+    initTheme() {
+      var stored = null;
+      try { stored = window.localStorage.getItem('pm-theme'); } catch (e) { /* sandboxed */ }
+      var theme = stored;
+      if (theme !== 'dark' && theme !== 'light') {
+        var prefersDark = false;
+        try { prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { /* ignore */ }
+        theme = prefersDark ? 'dark' : 'light';
+      }
+      this.applyTheme(theme, false);
+    },
+
+    applyTheme(theme, persist) {
+      this.theme = theme;
+      try { document.documentElement.setAttribute('data-theme', theme); } catch (e) { /* ignore */ }
+      if (persist) {
+        try { window.localStorage.setItem('pm-theme', theme); } catch (e) { /* sandboxed */ }
+      }
+    },
+
+    toggleTheme() {
+      this.applyTheme(this.theme === 'dark' ? 'light' : 'dark', true);
     },
   },
 };

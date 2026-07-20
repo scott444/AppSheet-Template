@@ -9,7 +9,7 @@
      so its children become the actual grid items. */
   #app { display: contents; }
 
-  /* ── Color tokens ── */
+  /* ── Color tokens (light — default) ── */
   :root {
     --primary:       #1976D2;
     --primary-dark:  #1565C0;
@@ -23,8 +23,30 @@
     --success-text:  #137333;
     --error-bg:      #fce8e6;
     --error-text:    #c5221f;
+    --code-bg:       #f1f3f4;
+    --code-text:     #c5221f;
     --shadow-sm:     0 1px 3px rgba(0,0,0,0.12);
     --shadow-md:     0 2px 6px rgba(0,0,0,0.15);
+  }
+
+  /* ── Color tokens (dark) — applied when <html data-theme="dark"> ── */
+  :root[data-theme="dark"] {
+    --primary:       #3b82f6;
+    --primary-dark:  #2f6fe0;
+    --primary-light: #17233a;
+    --bg:            #1b1d21;
+    --surface:       #26292e;
+    --text:          #e8eaed;
+    --text-muted:    #9aa0a6;
+    --border:        #3a3e44;
+    --success-bg:    #14331f;
+    --success-text:  #81c995;
+    --error-bg:      #3a2020;
+    --error-text:    #f28b82;
+    --code-bg:       #303338;
+    --code-text:     #f28b82;
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.45);
+    --shadow-md:     0 2px 6px rgba(0,0,0,0.55);
   }
 
   /* ── Base ── */
@@ -71,6 +93,24 @@
     background: #69f0ae;
     flex-shrink: 0;
   }
+
+  /* ── Theme toggle (in top bar) ── */
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .theme-toggle:hover { background: rgba(255,255,255,0.15); }
+  .theme-toggle .icon { font-family: 'Material Symbols Rounded'; font-size: 20px; line-height: 1; }
 
   /* ── Shell (sidebar + content) ── */
   .shell {
@@ -200,7 +240,7 @@
   .result-box {
     margin-top: 16px;
     padding: 14px 16px;
-    background: #f1f3f4;
+    background: var(--code-bg);
     border-radius: 6px;
     font-family: 'Roboto Mono', monospace;
     font-size: 12px;
@@ -284,12 +324,12 @@
   .step-title { font-weight: 500; margin-bottom: 4px; }
   .step-desc  { color: var(--text-muted); line-height: 1.6; }
   code {
-    background: #f1f3f4;
+    background: var(--code-bg);
     padding: 2px 6px;
     border-radius: 4px;
     font-family: 'Roboto Mono', monospace;
     font-size: 12px;
-    color: #c5221f;
+    color: var(--code-text);
   }
 
   /* ── Forms (used in EqlUpload, DriveSetup) ── */
@@ -349,11 +389,13 @@
   .view-mode-btn:hover { background:var(--bg); color:var(--text); }
   .view-mode-btn.active { background:var(--primary); color:#fff; }
 
-  /* ── Deleted / added row styling in Modifications view ── */
+  /* ── EQL row styling ──
+     Non-modified rows have no background fill; main line items are bold so the
+     hierarchy stays legible in both light and dark themes. Only added/deleted
+     (modified) rows carry a background color. */
+  .eql-row-main td { font-weight: 700; }
   .eql-row-deleted td { background:var(--error-bg) !important; color:var(--text-muted); text-decoration:line-through; }
   .eql-row-added td { background:var(--success-bg) !important; color:var(--success-text); }
-  .eql-row-main td { background: #e3f2fd; }
-  .eql-row-sub  td { background: #c7d6e0; }
 
   /* ── Power Table ── */
   .pt-row-unmatched td { color: var(--text-muted); background: var(--bg) !important; font-style: italic; }

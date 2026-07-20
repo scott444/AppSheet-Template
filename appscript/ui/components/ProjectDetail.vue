@@ -39,6 +39,22 @@
           :disabled="editSaving"
         />
         <input
+          v-model="editForm.projectNumber"
+          type="text"
+          class="form-input"
+          placeholder="Project number/ID"
+          style="width:160px"
+          :disabled="editSaving"
+        />
+        <input
+          v-model="editForm.projectFolderUrl"
+          type="url"
+          class="form-input"
+          placeholder="Project folder URL"
+          style="width:240px"
+          :disabled="editSaving"
+        />
+        <input
           v-model="editForm.description"
           type="text"
           class="form-input"
@@ -48,7 +64,7 @@
         />
         <button
           class="btn btn-save"
-          :disabled="editSaving || !editForm.customer.trim() || !editForm.projectName.trim()"
+          :disabled="editSaving || !editForm.customer.trim() || !editForm.projectName.trim() || !editForm.projectNumber.trim()"
           @click="saveEditProject"
         >
           <span class="icon">{{ editSaving ? 'hourglass_empty' : 'save' }}</span>
@@ -64,8 +80,16 @@
       </div>
     </div>
 
+    <!-- Project number / folder link — shown below header when present -->
+    <div v-if="project && !editingProject && (project.projectNumber || project.projectFolderUrl)" style="display:flex;gap:16px;flex-wrap:wrap;color:var(--text-muted);font-size:13px;margin-top:-12px;margin-bottom:8px">
+      <span v-if="project.projectNumber">Project #: <strong>{{ project.projectNumber }}</strong></span>
+      <a v-if="project.projectFolderUrl" :href="project.projectFolderUrl" target="_blank" rel="noopener" title="Open project folder" style="display:inline-flex;align-items:center;color:var(--primary)">
+        <span class="icon" style="font-family:'Material Symbols Rounded';font-size:18px">folder_open</span>
+      </a>
+    </div>
+
     <!-- Description — shown below header when present -->
-    <div v-if="project && !editingProject && project.description" style="color:var(--text-muted);font-size:13px;margin-top:-12px;margin-bottom:16px">
+    <div v-if="project && !editingProject && project.description" style="color:var(--text-muted);font-size:13px;margin-top:-4px;margin-bottom:16px">
       {{ project.description }}
     </div>
 
@@ -143,7 +167,7 @@
             <span style="font-size:12px;color:var(--text-muted)">Unsaved changes</span>
           </template>
           <span v-else-if="!loadingAdl" style="font-size:12px;color:var(--success-text)">
-            <span class="icon" style="font-size:14px;vertical-align:middle">check_circle</span> All changes saved
+            <span class="icon" style="font-family:'Material Symbols Rounded';font-size:14px;vertical-align:middle">check_circle</span> All changes saved
           </span>
           <div v-if="adlSaveError" class="result-box error" style="display:block;margin-left:8px">{{ adlSaveError }}</div>
         </div>
@@ -844,7 +868,7 @@ export default {
 
       // Inline project edit state
       editingProject: false,
-      editForm: { customer: '', projectName: '', description: '' },
+      editForm: { customer: '', projectName: '', projectNumber: '', projectFolderUrl: '', description: '' },
       editSaving: false,
       editError: '',
 
@@ -1317,7 +1341,7 @@ export default {
     },
 
     startEditProject() {
-      this.editForm = { customer: this.project.customer, projectName: this.project.projectName, description: this.project.description || '' };
+      this.editForm = { customer: this.project.customer, projectName: this.project.projectName, projectNumber: this.project.projectNumber || '', projectFolderUrl: this.project.projectFolderUrl || '', description: this.project.description || '' };
       this.editError = '';
       this.editingProject = true;
     },
@@ -1336,7 +1360,7 @@ export default {
           self.editError = err.message || String(err);
           self.editSaving = false;
         })
-        .updateProject(this.projectId, { customer: this.editForm.customer.trim(), projectName: this.editForm.projectName.trim(), description: this.editForm.description.trim() });
+        .updateProject(this.projectId, { customer: this.editForm.customer.trim(), projectName: this.editForm.projectName.trim(), projectNumber: this.editForm.projectNumber.trim(), projectFolderUrl: this.editForm.projectFolderUrl.trim(), description: this.editForm.description.trim() });
     },
 
     cancelEditProject() {
